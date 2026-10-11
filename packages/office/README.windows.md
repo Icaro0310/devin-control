@@ -44,7 +44,7 @@ Use `--data-dir`/`--config-dir` where the tool documents them for non-default lo
 _Long-running daemon. `schtasks` cannot set "Start in", so either call `daemon.py` by absolute path as below or open the task in Task Scheduler afterwards and set Actions → Edit → "Start in" to the checkout directory._
 
 ```powershell
-schtasks /create /tn "devin-office" /tr "py \"<CAMINHO_DO_CHECKOUT>\daemon.py\" --port 8788" /sc onlogon /f
+schtasks /create /tn "devin-office" /tr 'py "<CAMINHO_DO_CHECKOUT>\daemon.py" --port 8788' /sc onlogon /f
 ```
 
 Runs under your account, no admin needed. Adjust `/sc`/`/st` (or `/sc onlogon` for daemons) to taste.
