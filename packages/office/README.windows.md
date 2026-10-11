@@ -43,14 +43,20 @@ Use `--data-dir`/`--config-dir` where the tool documents them for non-default lo
 
 _Long-running daemon. `schtasks` cannot set "Start in", so either call `daemon.py` by absolute path as below or open the task in Task Scheduler afterwards and set Actions → Edit → "Start in" to the checkout directory._
 
-Save this as `%USERPROFILE%\devin-tasks\devin-office.cmd` (quoting works normally inside a `.cmd` file):
+Quoted path arguments inside `/tr` fail differently in cmd.exe and PowerShell 5.1, so this job goes through a wrapper `.cmd` file (quoting inside the file works normally). `%PUBLIC%` is used because it never contains spaces, keeping the stored action space-free:
+
+```powershell
+New-Item -ItemType Directory -Force "$env:PUBLIC\devin-tasks"
+```
+
+Save this as `%PUBLIC%\devin-tasks\devin-office.cmd`:
 
 ```batch
 py "<CAMINHO_DO_CHECKOUT>\daemon.py" --port 8788
 ```
 
 ```powershell
-schtasks /create /tn "devin-office" /tr "%USERPROFILE%\devin-tasks\devin-office.cmd" /sc onlogon /f
+schtasks /create /tn "devin-office" /tr "%PUBLIC%\devin-tasks\devin-office.cmd" /sc onlogon /f
 ```
 
 Runs under your account, no admin needed. Adjust `/sc`/`/st` (or `/sc onlogon` for daemons) to taste.
