@@ -124,3 +124,41 @@ def test_metrics_counts_custom_unit_statuses(tmp_path, capsys):
     doc = _metrics(tmp_path, out["run_id"])
     assert doc["outcome"] == "partial"
     assert doc["outcome_counts"] == {"success": 1, "timeout": 1}
+
+
+def test_metrics_colliding_run_ids_keep_separate_docs(tmp_path, capsys):
+    reg = tmp_path / "plans.jsonl"
+    assert _record(reg, "success", "--run-id", "a/b") == 0
+    assert _record(reg, "failed", "--run-id", "a-b") == 0
+    capsys.readouterr()
+    # distinct raw ids slug to the same name — the recorded id is
+    # uniquified so every run_id resolves to its own metrics file
+    lines = [json.loads(l) for l in reg.read_text().splitlines()]
+    assert [l["run_id"] for l in lines] == ["a-b", "a-b-2"]
+    first = _metrics(tmp_path, "a-b")
+    second = _metrics(tmp_path, "a-b-2")
+    assert first["outcome"] == "success" and first["run_id"] == "a-b"
+    assert second["outcome"] == "failed" and second["run_id"] == "a-b-2"
+
+
+def test_metrics_repeated_run_id_keeps_both_docs(tmp_path, capsys):
+    reg = tmp_path / "plans.jsonl"
+    assert _record(reg, "success", "--run-id", "r-1") == 0
+    assert _record(reg, "failed", "--run-id", "r-1") == 0
+    capsys.readouterr()
+    lines = [json.loads(l) for l in reg.read_text().splitlines()]
+    assert [l["run_id"] for l in lines] == ["r-1", "r-1-2"]
+    assert _metrics(tmp_path, "r-1")["outcome"] == "success"
+    assert _metrics(tmp_path, "r-1-2")["outcome"] == "failed"
+
+
+def test_metrics_non_finite_values_rejected(tmp_path, capsys):
+    reg = tmp_path / "plans.jsonl"
+    assert _record(reg, "success", "--duration", "NaN") == 2
+    assert _record(reg, "success", "--duration", "inf") == 2
+    assert _record(reg, "success", "--started", "inf") == 2
+    assert _record(reg, "success",
+                   "--units", '[{"id":"a","duration_s":NaN}]') == 2
+    capsys.readouterr()
+    assert not reg.exists()
+    assert not (tmp_path / "metrics").exists()

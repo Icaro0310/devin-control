@@ -228,3 +228,34 @@ def test_estimate_cost_minutes_validation():
         plan_task({"est_unit_minutes": 0})
     with pytest.raises(ValueError):
         plan_task({"units_detail": [{"id": "a", "est_minutes": "fast"}]})
+
+
+def test_estimate_cost_single_unit_split():
+    from devin_orchestrator.planner import estimate_cost
+    # a large single-area task is decomposed across the workers — the
+    # estimate must reflect the planned split, not a 1.0 speedup
+    spec = {"kind": "refactor", "independent_units": 1,
+            "estimated_scope": "large"}
+    est = estimate_cost(spec, plan_task(spec))
+    assert est["planned_workers"] == 3
+    assert est["sequential_minutes"] == 60.0
+    assert est["fanout_minutes"] == 20.0
+    assert est["speedup"] == 3.0
+
+
+def test_estimate_cost_rejects_non_finite_minutes():
+    for bad in (float("nan"), float("inf"), 1e400):
+        with pytest.raises(ValueError):
+            plan_task({"est_unit_minutes": bad})
+        with pytest.raises(ValueError):
+            plan_task(
+                {"units_detail": [{"id": "a", "est_minutes": bad}]})
+
+
+def test_estimate_cost_tiny_units_keep_speedup():
+    from devin_orchestrator.planner import estimate_cost
+    # display rounding to 2 decimals must not collapse a real saving
+    spec = {"kind": "implementation", "independent_units": 2,
+            "est_unit_minutes": 0.001}
+    est = estimate_cost(spec, plan_task(spec))
+    assert est["speedup"] == 2.0

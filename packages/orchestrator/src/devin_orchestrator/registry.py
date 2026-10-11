@@ -173,15 +173,6 @@ def build_metrics(rec: PlanRecord, run: dict[str, Any]) -> dict[str, Any]:
 def _write_metrics_doc(registry: Path, run_id: str,
                        doc: dict[str, Any]) -> Path:
     path = metrics_path(registry, run_id)
-    # Distinct run ids can slug to the same name ("a/b" vs "a-b") and an
-    # id may legitimately be recorded twice — never clobber an existing
-    # metrics file; disambiguate with a counter suffix instead.
-    if path.exists():
-        stem = path.stem
-        i = 2
-        while path.with_name(f"{stem}-{i}.json").exists():
-            i += 1
-        path = path.with_name(f"{stem}-{i}.json")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(doc, indent=2) + "\n", encoding="utf-8")
@@ -208,6 +199,16 @@ def record(registry: Path, plan: dict[str, Any], outcome: str,
     plan_hash = _plan_hash(plan)
     run_id = _safe_name(
         str(run.get("run_id") or f"run-{int(ts * 1000)}-{plan_hash[:8]}"))
+    # run ids double as metrics filenames — distinct raw ids can slug to
+    # the same name ("a/b" vs "a-b") and an id may legitimately be
+    # recorded twice. Uniquify the recorded id so its metrics file is
+    # never clobbered and metrics_path() resolves every run to its own
+    # document.
+    base = run_id
+    i = 2
+    while metrics_path(registry, run_id).exists():
+        run_id = f"{base}-{i}"
+        i += 1
     rec = PlanRecord(
         ts=ts,
         plan_hash=plan_hash,
