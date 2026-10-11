@@ -182,4 +182,49 @@ def test_schemas_shipped_and_loadable():
     plan = json.loads(
         files("devin_orchestrator").joinpath("plan.schema.json").read_text())
     assert "units_detail" in spec["properties"]
+    assert "est_unit_minutes" in spec["properties"]
     assert "file_collisions" in plan["properties"]
+    assert "cost_estimate" in plan["properties"]
+
+
+# -- cost estimate -----------------------------------------------------------
+
+
+def test_estimate_cost_fanout_scheduling():
+    from devin_orchestrator.planner import estimate_cost
+    spec = {"kind": "implementation", "independent_units": 4,
+            "estimated_scope": "medium"}
+    est = estimate_cost(spec, plan_task(spec))  # capped at 3 workers
+    assert est["unit_count"] == 4
+    assert est["sequential_minutes"] == 120.0
+    assert est["fanout_minutes"] == 60.0  # lanes 60/30/30
+    assert est["planned_workers"] == 3
+    assert est["estimated_sessions"] == 4
+    assert est["speedup"] == 2.0
+
+
+def test_estimate_cost_top_level_default():
+    from devin_orchestrator.planner import estimate_cost
+    spec = {"kind": "implementation", "independent_units": 2,
+            "est_unit_minutes": 10}
+    est = estimate_cost(spec, plan_task(spec))
+    assert [u["est_minutes"] for u in est["units"]] == [10.0, 10.0]
+    assert est["fanout_minutes"] == 10.0
+
+
+def test_estimate_cost_detail_outnumbers_declared_units():
+    from devin_orchestrator.planner import estimate_cost
+    spec = {"kind": "implementation",
+            "units_detail": [{"id": "a"}, {"id": "b"}, {"id": "c"}]}
+    est = estimate_cost(spec, plan_task(spec))
+    assert est["unit_count"] == 3  # detail wins over the default of 1
+    assert [u["id"] for u in est["units"]] == ["a", "b", "c"]
+
+
+def test_estimate_cost_minutes_validation():
+    with pytest.raises(ValueError):
+        plan_task({"est_unit_minutes": -5})
+    with pytest.raises(ValueError):
+        plan_task({"est_unit_minutes": 0})
+    with pytest.raises(ValueError):
+        plan_task({"units_detail": [{"id": "a", "est_minutes": "fast"}]})
