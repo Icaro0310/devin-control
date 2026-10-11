@@ -63,6 +63,23 @@ repositories were absorbed into this workspace (F4.4); their histories
 are preserved under `packages/` and the old repos are archived with
 pointers here.
 
+## Pre-commit gate
+
+`.pre-commit-hooks.yaml` ships `devin-switch-gate`, a `language: system`
+hook that runs `devin-switch doctor` — strictly read-only, exits 1 on
+any FAIL — to block commits when the managed Devin config is broken:
+
+```yaml
+- repo: https://github.com/Icaro0310/devin-control
+  rev: main   # or a tag cut after the hook lands — v0.1.0 predates it
+  hooks: [{ id: devin-switch-gate }]
+```
+
+`language: system` means pre-commit does not install the tool —
+`devin-switch` must be on PATH first (per-OS install steps live in the
+[`packages/switch`](packages/switch) platform guides) or every commit
+fails with "Executable `devin-switch` not found".
+
 ## Platform support
 
 All packages support Linux and Windows (office is Linux-only — it uses
