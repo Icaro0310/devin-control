@@ -1,8 +1,11 @@
 {
   "name": "devin-control",
   "private": true,
-  "description": "devin-control product workspace — packages/bridge is the published @icaro0310/devin-bridge npm package.",
+  "description": "devin-control product workspace \u2014 packages/bridge is the published @icaro0310/devin-bridge npm package.",
   "workspaces": [
     "packages/bridge"
-  ]
+  ],
+  "scripts": {
+    "test": "node --test \"packages/*/tests/*.test.js\""
+  }
 }
