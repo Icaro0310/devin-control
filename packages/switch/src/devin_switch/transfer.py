@@ -97,7 +97,7 @@ def validate_rel_path(rel: Any) -> str:
         raise TransferError(f"archive path {rel!r}: {problems}")
     name = parts[-1]
     if (
-        name.startswith(".")
+        any(part.startswith(".") for part in parts)
         or name == META_FILENAME
         or "__pycache__" in parts
     ):
@@ -226,7 +226,13 @@ def parse_archive(text: str) -> Archive:
             f"unsupported schema_version {version!r} — this devin-switch "
             f"only reads version {SCHEMA_VERSION}"
         )
-    name = validate_profile_name(_expect_str(obj, "name"))
+    # The embedded name is only the default for the target profile —
+    # charset rules are enforced on the effective name at import time,
+    # so an export of a profile discovered under a non-portable dirname
+    # can still be rescued with --name instead of failing to parse.
+    name = _expect_str(obj, "name")
+    if not name:
+        raise TransferError("archive field 'name' must not be empty")
 
     description = obj.get("description", "")
     if not isinstance(description, str):
@@ -331,14 +337,30 @@ def write_archive_profile(
             )
         # Re-check just before the rename: a profile dir must never be
         # clobbered without force, even if it appeared mid-import.
+        replaced: Path | None = None
         if target.exists():
             if not force:
                 raise TransferError(
                     f"profile {name!r} already exists — re-run with "
                     "--force to replace it"
                 )
-            shutil.rmtree(target)
-        os.replace(staging, target)
+            # Move the old profile aside rather than deleting it first:
+            # if the rename fails it is restored, and a crash mid-import
+            # leaves it recoverable next to the target (hidden sibling
+            # dirs are ignored by discover()).
+            replaced = (
+                profiles_dir
+                / f".{name}.replaced-{uuid.uuid4().hex[:12]}"
+            )
+            os.replace(target, replaced)
+        try:
+            os.replace(staging, target)
+        except BaseException:
+            if replaced is not None and not target.exists():
+                os.replace(replaced, target)
+            raise
+        if replaced is not None:
+            shutil.rmtree(replaced)
     except BaseException:
         shutil.rmtree(staging, ignore_errors=True)
         raise

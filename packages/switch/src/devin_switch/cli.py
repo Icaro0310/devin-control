@@ -22,6 +22,7 @@ touched, ever.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -337,7 +338,19 @@ def cmd_export(roots: Roots, name: str, out: Path | None) -> int:
         )
         return 1
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(payload, encoding="utf-8")
+    try:
+        # O_EXCL makes "no overwrite" atomic with the create (the exists()
+        # check above alone would race); mode 0o600 because the archive
+        # can carry credential-named files.
+        fd = os.open(out, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        print(
+            f"error: {out} already exists — refusing to overwrite",
+            file=sys.stderr,
+        )
+        return 1
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(payload)
     print(
         f"exported profile '{name}' — {result.file_count} file(s) -> {out}"
     )
@@ -349,13 +362,23 @@ def cmd_import(
 ) -> int:
     try:
         text = file.expanduser().read_text(encoding="utf-8")
-    except OSError as exc:
+    except (OSError, UnicodeDecodeError) as exc:
         print(f"error: cannot read {file}: {exc}", file=sys.stderr)
         return 1
     archive = parse_archive(text)  # raises TransferError — nothing written
-    target_name = (
-        validate_profile_name(name) if name is not None else archive.name
-    )
+    if name is not None:
+        target_name = validate_profile_name(name)
+    else:
+        # The archive's own name may not be a valid profile name (an
+        # exported profile can live under a non-portable dirname) —
+        # --name is the escape hatch.
+        try:
+            target_name = validate_profile_name(archive.name)
+        except TransferError as exc:
+            raise TransferError(
+                f"{exc} — pass --name to import it under a valid "
+                "profile name"
+            ) from exc
     target = roots.profiles_dir / target_name
     collides = target.exists()
     n = len(archive.files)
@@ -377,6 +400,16 @@ def cmd_import(
         print()
         print("re-run with --apply to create the profile")
         return 0
+    if (
+        roots.profiles_dir.resolve()
+        == paths_mod.bundled_profiles_dir()
+    ):
+        print(
+            "error: refusing to import into the bundled example profiles "
+            "— pass --profiles-dir or set DEVIN_SWITCH_PROFILES_DIR",
+            file=sys.stderr,
+        )
+        return 1
     written = write_archive_profile(
         archive, roots.profiles_dir, target_name, force, roots
     )
