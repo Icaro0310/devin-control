@@ -21,6 +21,7 @@ commands — the planner cannot create repositories or perform I/O.
 from __future__ import annotations
 
 import json
+import math
 import os
 from dataclasses import dataclass, field
 from typing import Any
@@ -43,6 +44,7 @@ def _check_minutes(value: Any, field: str) -> float | None:
     if (
         not isinstance(value, (int, float))
         or isinstance(value, bool)
+        or not math.isfinite(value)
         or value <= 0
     ):
         raise ValueError(f"{field} must be a positive number")
@@ -277,15 +279,33 @@ def estimate_cost(spec: dict[str, Any], plan: WorkerPlan) -> dict[str, Any]:
             "id": d.get("id", f"unit-{i + 1}"),
             "est_minutes": float(mins or default_min),
         })
-    sequential = round(sum(u["est_minutes"] for u in units), 2)
+    seq_total = sum(u["est_minutes"] for u in units)
+    sequential = round(seq_total, 2)
     w = plan.workers
-    if w <= 0 or n <= 1:
-        fanout = sequential
+    if w <= 0 or n == 0:
+        fan_raw = seq_total
+    elif n == 1:
+        # A large single-area task is decomposed into disjoint slices —
+        # model the critical path as an even split across the workers.
+        fan_raw = seq_total / w
     else:
         lanes = [0.0] * w
         for m in sorted((u["est_minutes"] for u in units), reverse=True):
             lanes[lanes.index(min(lanes))] += m
-        fanout = round(max(lanes), 2)
+        fan_raw = max(lanes)
+    fanout = round(fan_raw, 2)
+    if w <= 0:
+        sched = "0 workers planned — everything runs sequentially inline"
+    elif n == 1:
+        sched = (
+            f"single unit decomposed evenly across {w} worker lane(s); "
+            "critical path = unit / workers"
+        )
+    else:
+        sched = (
+            "fan-out = greedy longest-first scheduling across "
+            f"{w} worker lane(s); critical path = longest lane"
+        )
     assumptions = [
         (
             "unit durations: units_detail[].est_minutes, else spec "
@@ -293,12 +313,7 @@ def estimate_cost(spec: dict[str, Any], plan: WorkerPlan) -> dict[str, Any]:
             f"({task['estimated_scope']}="
             f"{SCOPE_UNIT_MINUTES[task['estimated_scope']]} min)"
         ),
-        (
-            f"fan-out = greedy longest-first scheduling across {w} worker "
-            "lane(s); critical path = longest lane"
-            if w > 0
-            else "0 workers planned — everything runs sequentially inline"
-        ),
+        sched,
         "excludes worker spawn, result collection and verification overhead",
     ]
     return {
@@ -310,7 +325,9 @@ def estimate_cost(spec: dict[str, Any], plan: WorkerPlan) -> dict[str, Any]:
         "estimated_sessions": 1 + w,  # one coordinator + one per worker
         "sequential_minutes": sequential,
         "fanout_minutes": fanout,
-        "speedup": round(sequential / fanout, 2) if fanout else 1.0,
+        # speedup is computed on the unrounded totals — display rounding
+        # alone must not collapse a real saving to 1.0
+        "speedup": round(seq_total / fan_raw, 2) if fan_raw else 1.0,
         "assumptions": assumptions,
         "note": "rough planning estimate in minutes — not billing or quota data",
     }

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import re
 import time
@@ -105,6 +106,7 @@ def _normalise_units(raw: Any) -> list[dict[str, Any]]:
         if dur is not None and (
             not isinstance(dur, (int, float))
             or isinstance(dur, bool)
+            or not math.isfinite(dur)
             or dur < 0
         ):
             raise ValueError(
@@ -127,12 +129,15 @@ def build_metrics(rec: PlanRecord, run: dict[str, Any]) -> dict[str, Any]:
     if duration is not None and (
         not isinstance(duration, (int, float))
         or isinstance(duration, bool)
+        or not math.isfinite(duration)
         or duration < 0
     ):
         raise ValueError("run duration_s must be a non-negative number")
     started = run.get("started")
     if started is not None and (
-        not isinstance(started, (int, float)) or isinstance(started, bool)
+        not isinstance(started, (int, float))
+        or isinstance(started, bool)
+        or not math.isfinite(started)
     ):
         raise ValueError("run started must be a Unix timestamp (number)")
     ended = rec.ts
@@ -168,6 +173,15 @@ def build_metrics(rec: PlanRecord, run: dict[str, Any]) -> dict[str, Any]:
 def _write_metrics_doc(registry: Path, run_id: str,
                        doc: dict[str, Any]) -> Path:
     path = metrics_path(registry, run_id)
+    # Distinct run ids can slug to the same name ("a/b" vs "a-b") and an
+    # id may legitimately be recorded twice — never clobber an existing
+    # metrics file; disambiguate with a counter suffix instead.
+    if path.exists():
+        stem = path.stem
+        i = 2
+        while path.with_name(f"{stem}-{i}.json").exists():
+            i += 1
+        path = path.with_name(f"{stem}-{i}.json")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(doc, indent=2) + "\n", encoding="utf-8")
