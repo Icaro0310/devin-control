@@ -21,6 +21,7 @@ commands — the planner cannot create repositories or perform I/O.
 from __future__ import annotations
 
 import json
+import math
 import os
 from dataclasses import dataclass, field
 from typing import Any
@@ -31,6 +32,23 @@ DEFAULT_WRITE_PROFILE = "subagent_general"
 
 VALID_KINDS = {"implementation", "question", "review", "fix", "refactor", "research"}
 VALID_SCOPES = {"trivial", "small", "medium", "large"}
+
+# Fallback unit durations for --cost-estimate when the spec declares none.
+SCOPE_UNIT_MINUTES = {"trivial": 5, "small": 15, "medium": 30, "large": 60}
+
+
+def _check_minutes(value: Any, field: str) -> float | None:
+    """Optional positive-number validator for estimated-minute fields."""
+    if value is None:
+        return None
+    if (
+        not isinstance(value, (int, float))
+        or isinstance(value, bool)
+        or not math.isfinite(value)
+        or value <= 0
+    ):
+        raise ValueError(f"{field} must be a positive number")
+    return float(value)
 
 
 @dataclass
@@ -105,6 +123,7 @@ def _normalise_spec(spec: dict[str, Any]) -> dict[str, Any]:
             ):
                 raise ValueError(
                     "units_detail[].files must be a list of non-empty strings")
+            _check_minutes(u.get("est_minutes"), "units_detail[].est_minutes")
     return {
         "kind": kind,
         "estimated_scope": scope,
@@ -112,6 +131,8 @@ def _normalise_spec(spec: dict[str, Any]) -> dict[str, Any]:
         "needs_write": bool(spec.get("needs_write", True)),
         "summary": str(spec.get("summary", ""))[:200],
         "units_detail": detail,
+        "est_unit_minutes": _check_minutes(
+            spec.get("est_unit_minutes"), "est_unit_minutes"),
     }
 
 
@@ -231,6 +252,85 @@ def plan_task(spec: dict[str, Any], env: dict[str, str] | None = None) -> Worker
         warnings=warnings,
         file_collisions=collisions,
     )
+
+
+def estimate_cost(spec: dict[str, Any], plan: WorkerPlan) -> dict[str, Any]:
+    """Rough per-unit duration estimate for a spec under a given plan.
+
+    Planning label only — unit is *minutes*, never currency, quota or
+    billing. Durations come from ``units_detail[].est_minutes``, then
+    ``est_unit_minutes``, then a per-scope default. The fan-out figure is a
+    greedy longest-first schedule across ``plan.workers`` lanes; its
+    critical path is the longest lane. With 0 workers everything runs
+    sequentially in the main session and the two numbers coincide.
+    """
+    task = _normalise_spec(spec)
+    detail = task["units_detail"] or []
+    n = max(task["independent_units"], len(detail))
+    default_min = (
+        task["est_unit_minutes"]
+        or SCOPE_UNIT_MINUTES[task["estimated_scope"]]
+    )
+    units: list[dict[str, Any]] = []
+    for i in range(n):
+        d = detail[i] if i < len(detail) else {}
+        mins = _check_minutes(d.get("est_minutes"), "units_detail[].est_minutes")
+        units.append({
+            "id": d.get("id", f"unit-{i + 1}"),
+            "est_minutes": float(mins or default_min),
+        })
+    seq_total = sum(u["est_minutes"] for u in units)
+    sequential = round(seq_total, 2)
+    w = plan.workers
+    if w <= 0 or n == 0:
+        fan_raw = seq_total
+    elif n == 1:
+        # A large single-area task is decomposed into disjoint slices —
+        # model the critical path as an even split across the workers.
+        fan_raw = seq_total / w
+    else:
+        lanes = [0.0] * w
+        for m in sorted((u["est_minutes"] for u in units), reverse=True):
+            lanes[lanes.index(min(lanes))] += m
+        fan_raw = max(lanes)
+    fanout = round(fan_raw, 2)
+    if w <= 0:
+        sched = "0 workers planned — everything runs sequentially inline"
+    elif n == 1:
+        sched = (
+            f"single unit decomposed evenly across {w} worker lane(s); "
+            "critical path = unit / workers"
+        )
+    else:
+        sched = (
+            "fan-out = greedy longest-first scheduling across "
+            f"{w} worker lane(s); critical path = longest lane"
+        )
+    assumptions = [
+        (
+            "unit durations: units_detail[].est_minutes, else spec "
+            "est_unit_minutes, else scope default "
+            f"({task['estimated_scope']}="
+            f"{SCOPE_UNIT_MINUTES[task['estimated_scope']]} min)"
+        ),
+        sched,
+        "excludes worker spawn, result collection and verification overhead",
+    ]
+    return {
+        "kind": "duration_estimate",
+        "unit": "minutes",
+        "unit_count": n,
+        "units": units,
+        "planned_workers": w,
+        "estimated_sessions": 1 + w,  # one coordinator + one per worker
+        "sequential_minutes": sequential,
+        "fanout_minutes": fanout,
+        # speedup is computed on the unrounded totals — display rounding
+        # alone must not collapse a real saving to 1.0
+        "speedup": round(seq_total / fan_raw, 2) if fan_raw else 1.0,
+        "assumptions": assumptions,
+        "note": "rough planning estimate in minutes — not billing or quota data",
+    }
 
 
 def plan_task_json(spec_json: str, env: dict[str, str] | None = None) -> str:

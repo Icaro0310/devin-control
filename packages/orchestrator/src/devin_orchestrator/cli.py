@@ -9,17 +9,21 @@ from importlib.resources import files
 from pathlib import Path
 
 from devin_orchestrator import registry as plan_registry
-from devin_orchestrator.planner import plan_task, plan_task_json
+from devin_orchestrator.planner import estimate_cost, plan_task, plan_task_json
 
 SCHEMA_NAMES = ("spec", "plan")
 
 
-def _explain(spec_json: str) -> str:
-    """Human-readable walkthrough of the plan decision (OR-2)."""
+def _load_spec(spec_json: str) -> dict:
     try:
-        spec = json.loads(spec_json)
+        return json.loads(spec_json)
     except json.JSONDecodeError as exc:
         raise ValueError(f"invalid task spec JSON: {exc}") from exc
+
+
+def _explain(spec_json: str, cost: bool = False) -> str:
+    """Human-readable walkthrough of the plan decision (OR-2)."""
+    spec = _load_spec(spec_json)
     plan = plan_task(spec)
     lines = [f"Plan: {plan.workers} worker(s), mode={plan.mode}"]
     if plan.nesting_blocked:
@@ -34,6 +38,18 @@ def _explain(spec_json: str) -> str:
         lines.append(f"- warning: {w}")
     for c in plan.file_collisions:
         lines.append(f"- collision: units {c['units']} both touch {c['path']}")
+    if cost:
+        est = estimate_cost(spec, plan)
+        lines.append("Cost estimate (planning only — not billing):")
+        for u in est["units"]:
+            lines.append(f"- unit {u['id']}: ~{u['est_minutes']:g} min")
+        lines.append(
+            f"- {est['unit_count']} unit(s): ~{est['sequential_minutes']:g} min"
+            f" sequential vs ~{est['fanout_minutes']:g} min fan-out"
+            f" ({est['planned_workers']} worker lane(s))")
+        lines.append(f"- estimated sessions: {est['estimated_sessions']}")
+        for a in est["assumptions"]:
+            lines.append(f"- assumption: {a}")
     return "\n".join(lines)
 
 
@@ -51,6 +67,11 @@ def main(argv: list[str] | None = None) -> int:
         "--explain", action="store_true",
         help="print a human-readable decision walkthrough instead of JSON",
     )
+    plan_p.add_argument(
+        "--cost-estimate", action="store_true",
+        help="add a per-unit duration estimate (minutes; a rough planning "
+        "label — sequential vs fan-out critical path, not billing)",
+    )
     schema_p = sub.add_parser(
         "schema", help="print the JSON Schema for the spec or the plan")
     schema_p.add_argument("name", choices=SCHEMA_NAMES)
@@ -64,6 +85,21 @@ def main(argv: list[str] | None = None) -> int:
     rec_p.add_argument("--notes", default="")
     rec_p.add_argument("--registry", type=Path,
                        help="override plans.jsonl location")
+    rec_p.add_argument(
+        "--run-id",
+        help="id of the run being recorded; default run-<ts>-<plan_hash>")
+    rec_p.add_argument(
+        "--session-id",
+        help="Devin session id that executed the plan")
+    rec_p.add_argument(
+        "--duration", type=float, metavar="SECONDS",
+        help="total wall-clock run duration in seconds")
+    rec_p.add_argument(
+        "--started", type=float, metavar="EPOCH",
+        help="run start as a Unix timestamp (seconds)")
+    rec_p.add_argument(
+        "--units", metavar="JSON",
+        help='per-unit results: [{"id","status","duration_s"}, ...]')
     hist_p = sub.add_parser(
         "history",
         help="read the local plan registry (counts + records)")
@@ -85,11 +121,25 @@ def main(argv: list[str] | None = None) -> int:
         reg = args.registry or plan_registry.default_registry_path()
         try:
             plan = json.loads(args.plan)
-            rec = plan_registry.record(reg, plan, args.outcome, args.notes)
+            units = json.loads(args.units) if args.units else None
+            rec = plan_registry.record(
+                reg, plan, args.outcome, args.notes,
+                run={
+                    "run_id": args.run_id,
+                    "session_id": args.session_id,
+                    "started": args.started,
+                    "duration_s": args.duration,
+                    "units": units,
+                })
         except (ValueError, json.JSONDecodeError) as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 2
-        print(json.dumps(rec.to_dict()))
+        out = rec.to_dict()
+        if rec.metrics_path:
+            out["metrics_path"] = rec.metrics_path
+        print(json.dumps(out))
+        if rec.metrics_error:
+            print(f"warning: {rec.metrics_error}", file=sys.stderr)
         return 0
 
     if args.command == "history":
@@ -109,7 +159,16 @@ def main(argv: list[str] | None = None) -> int:
     raw = args.spec if args.spec is not None else args.spec_file.read_text(
         encoding="utf-8")
     try:
-        out = _explain(raw) if args.explain else plan_task_json(raw)
+        if args.explain:
+            out = _explain(raw, cost=args.cost_estimate)
+        elif args.cost_estimate:
+            spec = _load_spec(raw)
+            plan = plan_task(spec)
+            doc = plan.to_dict()
+            doc["cost_estimate"] = estimate_cost(spec, plan)
+            out = json.dumps(doc, indent=2)
+        else:
+            out = plan_task_json(raw)
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2

@@ -30,6 +30,32 @@
         "max_workers": {"type": "integer"},
         "nesting": {"type": "string"}
       }
+    },
+    "cost_estimate": {
+      "type": "object",
+      "description": "Present only with --cost-estimate: per-unit duration estimate in minutes (planning label, not billing).",
+      "properties": {
+        "unit": {"type": "string"},
+        "unit_count": {"type": "integer"},
+        "units": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "est_minutes"],
+            "properties": {
+              "id": {"type": "string"},
+              "est_minutes": {"type": "number"}
+            }
+          }
+        },
+        "planned_workers": {"type": "integer"},
+        "estimated_sessions": {"type": "integer"},
+        "sequential_minutes": {"type": "number"},
+        "fanout_minutes": {"type": "number"},
+        "speedup": {"type": "number"},
+        "assumptions": {"type": "array", "items": {"type": "string"}},
+        "note": {"type": "string"}
+      }
     }
   }
 }
