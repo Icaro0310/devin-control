@@ -64,21 +64,25 @@ Zscaler é comum em ambientes corporativos e se comporta diferente de um proxy g
 
 _Long-running daemon. `schtasks` cannot set "Start in", so either call `daemon.py` by absolute path as below or open the task in Task Scheduler afterwards and set Actions → Edit → "Start in" to the checkout directory._
 
-Quoted path arguments inside `/tr` fail differently in cmd.exe and PowerShell 5.1, so this job goes through a wrapper `.cmd` file (quoting inside the file works normally). `%PUBLIC%` is used because it never contains spaces, keeping the stored action space-free:
+Quoted path arguments inside `/tr` fail differently in cmd.exe and PowerShell 5.1, so this job goes through a wrapper `.cmd` file in your own profile directory (quoting inside the file works normally, and no other user can replace it). Register with the `ScheduledTask` cmdlets, which take the path literally:
 
 ```powershell
-New-Item -ItemType Directory -Force "$env:PUBLIC\devin-tasks"
+New-Item -ItemType Directory -Force "$env:USERPROFILE\devin-tasks"   # cmd.exe: mkdir "%USERPROFILE%\devin-tasks"
 ```
 
-Save this as `%PUBLIC%\devin-tasks\devin-office.cmd`:
+Save this as `%USERPROFILE%\devin-tasks\devin-office.cmd`:
 
 ```batch
 py "<CAMINHO_DO_CHECKOUT>\daemon.py" --port 8788
 ```
 
 ```powershell
-schtasks /create /tn "devin-office" /tr "%PUBLIC%\devin-tasks\devin-office.cmd" /sc onlogon /f
+$action  = New-ScheduledTaskAction -Execute "$env:USERPROFILE\devin-tasks\devin-office.cmd"
+$trigger = New-ScheduledTaskTrigger -AtLogOn
+Register-ScheduledTask -TaskName "devin-office" -Action $action -Trigger $trigger
 ```
+
+_cmd.exe users: the same registration works from Task Scheduler's GUI (Action = the .cmd path)._
 
 User-scope `schtasks` needs no admin. If Group Policy disables Task Scheduler (`0x80070005` "Access is denied"), run the command manually or use the tool's own `install` subcommand where available. Options needing elevation, "Run whether user is logged on or not", highest privileges, are usually policy-blocked; when they are, a user-scope logon trigger (`/sc onlogon`) is the realistic fallback.
 
