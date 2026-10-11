@@ -1,4 +1,4 @@
-# devin-office — Personal Windows guide
+# devin-office, Personal Windows guide
 
 This guide covers unrestricted Windows setup. For restricted machines, see [README.corporate-windows.md](README.corporate-windows.md); for features, shared commands, limitations, and the safety model, see [README.md](README.md).
 
@@ -34,20 +34,20 @@ Use `--data-dir`/`--config-dir` where the tool documents them for non-default lo
 ## Personal Windows specifics
 
 - **Python:** `uv` manages its own Python, which also avoids the Microsoft Store `python.exe` alias stub (it opens the Store instead of running). If you install Python from python.org anyway, tick "Add python.exe to PATH".
-- **Shell:** PowerShell 7 + Windows Terminal is the recommended setup; every command also works in `cmd.exe` and Windows PowerShell 5.1 — none require admin.
+- **Shell:** PowerShell 7 + Windows Terminal is the recommended setup; every command also works in `cmd.exe` and Windows PowerShell 5.1, none require admin.
 - **Install location:** executables live under `%USERPROFILE%\.local\bin`; data under `%APPDATA%\devin`. Nothing touches `Program Files` or the registry.
-- **WSL:** treat it as a Linux machine — follow [README.linux.md](README.linux.md) inside it.
+- **WSL:** treat it as a Linux machine, follow [README.linux.md](README.linux.md) inside it.
 - **Uninstall:** `uv tool uninstall <package>` (or `npm uninstall -g` for a Node.js tool) removes the CLI; delete `%APPDATA%\devin` to remove local data. No services or scheduled tasks are left behind.
 
 ## Recurring runs (optional)
 
-_Long-running daemon — prefer `systemd --user` service on Linux or a logon trigger (`/sc onlogon`) on Windows, not an interval. Point Task Scheduler's "Start in" at the checkout directory._
+_Long-running daemon. `schtasks` cannot set "Start in", so either call `daemon.py` by absolute path as below or open the task in Task Scheduler afterwards and set Actions → Edit → "Start in" to the checkout directory._
 
 ```powershell
-schtasks /create /tn "devin-office" /tr "py daemon.py --port 8788" /sc onlogon /f
+schtasks /create /tn "devin-office" /tr "py "<CAMINHO_DO_CHECKOUT>\daemon.py" --port 8788" /sc onlogon /f
 ```
 
-Runs under your account — no admin needed. Adjust `/sc`/`/st` (or `/sc onlogon` for daemons) to taste.
+Runs under your account, no admin needed. Adjust `/sc`/`/st` (or `/sc onlogon` for daemons) to taste.
 
 
 ## Troubleshooting
