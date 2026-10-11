@@ -1,0 +1,17 @@
+- id: devin-switch-gate
+  name: devin-switch config doctor
+  description: >-
+    Gate commits on Devin config sanity: `devin-switch doctor`
+    validates the managed config files (config.json,
+    mcp_config.json, hooks.v1.json, User/settings.json) for JSON
+    syntax and the documented hooks/MCP shapes, prints a
+    PASS/WARN/FAIL line per file plus a closest-profile ranking,
+    and exits 1 on any FAIL — blocking the commit. WARN lines are
+    advisory only. Strictly read-only: the command never writes,
+    and credentials.toml is never opened — its presence is
+    checked, never its contents. The profile ranking reads the
+    bundled or local profiles dir and is informational.
+  entry: devin-switch doctor
+  language: system
+  pass_filenames: false
+  always_run: true
