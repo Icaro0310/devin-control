@@ -4,5 +4,8 @@
   "description": "devin-control product workspace — packages/bridge is the published @icaro0310/devin-bridge npm package.",
   "workspaces": [
     "packages/bridge"
-  ]
+  ],
+  "scripts": {
+    "test": "node --test \"packages/*/tests/*.test.js\""
+  }
 }
