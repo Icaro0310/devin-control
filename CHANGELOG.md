@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Hooks** — `.pre-commit-hooks.yaml` adds `devin-switch-gate`, a
+  `language: system` hook running `devin-switch doctor` (read-only;
+  exits 1 on any FAIL) so consumers can gate commits on Devin config
+  sanity. Requires `devin-switch` on PATH.
 - **Docs** — refreshed the generated `Part of the DEVIN ecosystem` block: journey recuration v2 (six paths, zero repeats, `Local-first ops` label, `devin-bridge` in DevOps).
 - **Docs** — ecosystem journey recuration applied (six curated audiences); stale `Path:` line removed from the devin-bridge eco-block, which is not a registry entry.
 - **CI** — Ruff lint job added (`astral-sh/ruff-action`, pinned);

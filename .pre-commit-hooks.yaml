@@ -11,6 +11,9 @@
     and credentials.toml is never opened — its presence is
     checked, never its contents. The profile ranking reads the
     bundled or local profiles dir and is informational.
+    Requires `devin-switch` on PATH — like every `language:
+    system` hook it runs the installed tool and does not
+    install it (pipx/uv tool/pip install devin-switch first).
   entry: devin-switch doctor
   language: system
   pass_filenames: false
