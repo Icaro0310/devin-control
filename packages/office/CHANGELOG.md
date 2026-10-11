@@ -11,8 +11,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Docs: job agendado usa wrapper `.cmd` em `%USERPROFILE%\devin-tasks` + `Register-ScheduledTask -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"`; o wrapper antecede `%USERPROFILE%\.local\bin` ao `PATH` e o registro usa `-Force`.
 
-### Changed
-
 - README gains the generated `Part of the DEVIN ecosystem` block
   (track/nature/audience/interface rendered from the registry).
 
