@@ -23,7 +23,7 @@ Open `http://localhost:8788`; the process stops with Ctrl+C.
 ## Devin paths
 
 Session data normally lives under `${XDG_DATA_HOME:-$HOME/.local/share}/devin/cli/`; UI state and ACP stores under `${XDG_CONFIG_HOME:-$HOME/.config}/Devin/User/`.
-Use the tool's documented `--data-dir` or `--config-dir` flags for non-default locations.
+Use `--data-dir`/`--config-dir` where the tool documents them for non-default locations.
 
 ## Environment notes
 
@@ -42,7 +42,7 @@ Use the tool's documented `--data-dir` or `--config-dir` flags for non-default l
 
 ## Recurring runs (optional)
 
-_Long-running daemon — prefer `systemd --user` service on Linux or a logon trigger (`/sc onlogon`) on Windows, not an interval._
+_Long-running daemon — prefer `systemd --user` service on Linux or a logon trigger (`/sc onlogon`) on Windows, not an interval. Point Task Scheduler's "Start in" at the checkout directory._
 
 ```cron
 @reboot python daemon.py --port 8788
@@ -65,12 +65,6 @@ To find crash-looping units:
 systemctl --user list-units --state=activating
 systemctl --user show devin-office-probe -p NRestarts -p ActiveState
 ```
-
-The durable guard is not a state listing but an **external freshness
-check**: the hub exposes `probe.lastIngestAgoS` in `GET /api/state`, and
-an independent cron job alerts when the producer stops landing data.
-Producer liveness must never be reported by the producer — a dead probe
-cannot tell you it is dead.
 
 
 ## Troubleshooting

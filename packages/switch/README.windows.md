@@ -19,7 +19,7 @@ uv tool install "devin-switch"
 ## Devin paths
 
 Session data normally lives under `%APPDATA%\devin\cli\`; UI state and ACP stores under `%APPDATA%\Devin\User\`.
-Use the tool's documented `--data-dir` or `--config-dir` flags for non-default locations.
+Use `--config-dir`/`--profiles-dir` for non-default locations.
 
 ## Environment notes
 
