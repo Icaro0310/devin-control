@@ -1,0 +1,38 @@
+# devin-bridge mailbox intake — drains tasks dropped in the bridge inbox.
+#
+# The bridge has no listener by design (BR-3: file-based mailbox, untrusted
+# input, policy gates every step), so the daemon shape is trigger-based:
+# this oneshot service is fired by devin-bridge-intake.path when the inbox
+# receives a file, and by devin-bridge-intake.timer as a polling fallback.
+#
+# One logic, many faces: the unit only calls `devin-bridge intake`.
+
+[Unit]
+Description=devin-bridge mailbox intake (drain tasks from the inbox)
+Documentation=https://github.com/Icaro0310/devin-control/tree/main/packages/bridge
+# devin-bridge spawns `devin acp`; order after the session is up.
+After=default.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h
+# devin-bridge is an npm global bin; npm/pipx-style prefixes are not in
+# systemd's compiled-in search path, so resolve via env(1) + an explicit
+# PATH that covers the common user prefixes.
+Environment=PATH=%h/.local/bin:%h/.npm-global/bin:%h/bin:/usr/local/bin:/usr/bin:/bin
+# --sessions-file keeps the repo->sessionId map inside the state dir so the
+# hardening below can whitelist every write the bridge performs.
+ExecStart=/usr/bin/env devin-bridge intake --sessions-file %h/.local/state/devin-bridge/sessions.json
+# For unattended runs add `--yes` (auto-approves policy "ask" prompts —
+# understand your policy.json before enabling).
+
+# Hardening: everything the bridge writes lives under its state dir; Devin
+# stores are written by the spawned `devin acp` client under the two Devin
+# roots below. Reads elsewhere stay allowed; writes are confined.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=%h/.local/state/devin-bridge %h/.local/share/devin %h/.config/devin %h/.config/Devin
+
+[Install]
+# Enabled via the .path/.timer units; install nothing here.

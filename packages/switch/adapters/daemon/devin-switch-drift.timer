@@ -1,0 +1,16 @@
+# devin-switch drift check — daily, with catch-up.
+#
+# Persistent=true makes systemd run a missed check at next activation
+# (machines that suspend or are off at 09:00 don't skip silently).
+
+[Unit]
+Description=Daily devin-switch drift check
+Documentation=https://github.com/Icaro0310/devin-control/tree/main/packages/switch
+
+[Timer]
+OnCalendar=*-*-* 09:00
+Persistent=true
+Unit=devin-switch-drift.service
+
+[Install]
+WantedBy=timers.target

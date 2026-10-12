@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Windows Scheduled Task: devin-office dashboard daemon.
+
+  Unlike the scheduled oneshots elsewhere in this ecosystem, this task IS
+  the resident process: `py -3 daemon.py` (port flag 8788) serves the
+  pixel office on 127.0.0.1:8788 while you are logged on.
+
+  Trigger: at logon only — a server has no fixed schedule; the task just
+  keeps the dashboard process running for the session's lifetime.
+
+  IMPORTANT — path placeholder: <Arguments> contains the literal token
+  __OFFICE_CHECKOUT__, which install-task.ps1 replaces with the resolved
+  path of your devin-control checkout before registering. To import the
+  XML by hand, replace the token with your checkout path first:
+    schtasks /create /tn "devin-office" /xml devin-office.task.xml
+-->
+<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Description>devin-office dashboard daemon — serves http://localhost:8788 (pixel office + /api/state) by reading Devin's local stores read-only. Runs for the logged-on session; loopback only.</Description>
+    <URI>\devin-office</URI>
+  </RegistrationInfo>
+  <Triggers>
+    <LogonTrigger>
+      <Enabled>true</Enabled>
+    </LogonTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author">
+      <!-- Runs as the importing user, only while logged on — no admin. -->
+      <LogonType>InteractiveToken</LogonType>
+      <RunLevel>LeastPrivilege</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <!-- A dead dashboard restarts via Task Scheduler's restart policy;
+         a second instance while one is alive is ignored (port is held). -->
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <RestartOnFailure>
+      <Interval>PT1M</Interval>
+      <Count>3</Count>
+    </RestartOnFailure>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>true</AllowHardTerminate>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+    <AllowStartOnDemand>true</AllowStartOnDemand>
+    <Enabled>true</Enabled>
+    <Hidden>false</Hidden>
+    <!-- A resident server must NOT be killed by the default 3-day
+         execution limit — 0 = run until stopped/logoff. -->
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <Priority>7</Priority>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <!-- install-task.ps1 replaces __OFFICE_CHECKOUT__ with the absolute
+           path of the devin-control checkout before registering. -->
+      <Command>py</Command>
+      <Arguments>-3 "__OFFICE_CHECKOUT__\daemon.py" --port 8788</Arguments>
+    </Exec>
+  </Actions>
+</Task>

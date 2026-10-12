@@ -1,0 +1,18 @@
+# devin-bridge inbox watcher — fires devin-bridge-intake.service the moment
+# a task file lands in <state-dir>/mailbox/inbox/.
+#
+# IMPORTANT: the watched directory must exist before this unit is enabled —
+# create it once (`mkdir -p ~/.local/state/devin-bridge/mailbox/inbox`) or
+# run `devin-bridge intake` once, which creates all mailbox stage dirs.
+# A path unit watching a missing directory never arms.
+
+[Unit]
+Description=Watch devin-bridge mailbox inbox for new task files
+Documentation=https://github.com/Icaro0310/devin-control/tree/main/packages/bridge
+
+[Path]
+DirectoryNotEmpty=%h/.local/state/devin-bridge/mailbox/inbox
+Unit=devin-bridge-intake.service
+
+[Install]
+WantedBy=default.target

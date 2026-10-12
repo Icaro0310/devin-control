@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Windows Scheduled Task: devin-switch drift check (notification only).
+
+  Trigger: at logon + once daily — a machine suspended at the clock slot
+  still gets the check at next logon; StartWhenAvailable adds a catch-up.
+  The task runs `devin-switch doctor` and leaves output in the task's
+  last-run result; pair with `> %USERPROFILE%\.devin\switch-drift.log`
+  style redirection (edit Arguments) if you want a durable log file.
+
+  Import with install-task.ps1 (user scope, no admin) or:
+    schtasks /create /tn "devin-switch-drift" /xml devin-switch-drift.task.xml
+-->
+<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Description>Daily + logon drift check: `devin-switch doctor` — reports sanity failures and closest-profile distance. Notification only; never re-applies a profile.</Description>
+    <URI>\devin-switch-drift</URI>
+  </RegistrationInfo>
+  <Triggers>
+    <LogonTrigger>
+      <Enabled>true</Enabled>
+    </LogonTrigger>
+    <CalendarTrigger>
+      <StartBoundary>2026-01-01T09:00:00</StartBoundary>
+      <Enabled>true</Enabled>
+      <ScheduleByDay>
+        <DaysInterval>1</DaysInterval>
+      </ScheduleByDay>
+    </CalendarTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author">
+      <LogonType>InteractiveToken</LogonType>
+      <RunLevel>LeastPrivilege</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>true</AllowHardTerminate>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+    <AllowStartOnDemand>true</AllowStartOnDemand>
+    <Enabled>true</Enabled>
+    <Hidden>false</Hidden>
+    <ExecutionTimeLimit>PT10M</ExecutionTimeLimit>
+    <Priority>7</Priority>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>cmd.exe</Command>
+      <Arguments>/c devin-switch doctor</Arguments>
+    </Exec>
+  </Actions>
+</Task>
