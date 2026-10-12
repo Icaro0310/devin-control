@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Daemon adapters for the drift check (`adapters/daemon/`):
+  `devin-switch-drift.{service,timer}` user-level systemd units (daily
+  `devin-switch doctor` with `Persistent=true` catch-up, notification
+  only) and a Windows `task.xml` + `install-task.ps1`/`remove-task.ps1`
+  pair (logon + daily, `StartWhenAvailable`; the doctor report appends
+  to `%LOCALAPPDATA%\devin-switch\drift.log` so it survives the task's
+  discarded console output). `verify.sh` +
+  `tests/test_daemon_adapter.py` cover the artifacts.
+
 ### Changed
 
 - README gains the generated `Part of the DEVIN ecosystem` block

@@ -1,0 +1,32 @@
+# devin-switch drift check — notification only.
+#
+# Runs `devin-switch doctor`: sanity-checks the live Devin config and ranks
+# the closest profile by file distance. Output lands in the journal; drift
+# shows as "closest profile: <name> (N files away)" — distance 0 means the
+# live config exactly matches a known profile. There is no auto-reapply:
+# re-applying a profile stays a manual `devin-switch use <p> --apply`.
+#
+# One logic, many faces: the unit only calls the package CLI.
+
+[Unit]
+Description=devin-switch drift check (doctor, notification only)
+Documentation=https://github.com/Icaro0310/devin-control/tree/main/packages/switch
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h
+# devin-switch installs via uv/pipx into ~/.local/bin, which is not in
+# systemd's compiled-in search path — resolve via env(1).
+Environment=PATH=%h/.local/bin:%h/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/env devin-switch doctor
+
+# doctor is read-only: it inspects config.json, mcp_config.json and
+# User/settings.json under the Devin roots and writes nothing. Hardening
+# can therefore be strict — the whole filesystem is read-only to it.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+
+[Install]
+# Enabled via devin-switch-drift.timer; install nothing here.
