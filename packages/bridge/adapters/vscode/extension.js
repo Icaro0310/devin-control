@@ -63,9 +63,17 @@ function resolveWindowsEntry(exe) {
     } catch { return null; }
   }
   if (!file || !/\.(cmd|bat)$/i.test(file)) return null;
-  const entry = path.join(path.dirname(file), "node_modules",
-    "@icaro0310", "devin-bridge", "bin", "devin-bridge.js");
-  return fs.existsSync(entry) ? entry : null;
+  // The real .js entry sits beside the shim in two layouts: a global
+  // install puts node_modules/ under the npm prefix itself
+  // (<prefix>/devin-bridge.cmd → <prefix>/node_modules/...), while a
+  // project-local install shims into node_modules/.bin
+  // (<proj>/node_modules/.bin/devin-bridge.cmd → <proj>/node_modules/...).
+  const dir = path.dirname(file);
+  const candidates = [
+    path.join(dir, "node_modules", "@icaro0310", "devin-bridge", "bin", "devin-bridge.js"),
+    path.join(dir, "..", "@icaro0310", "devin-bridge", "bin", "devin-bridge.js"),
+  ];
+  return candidates.find((c) => fs.existsSync(c)) || null;
 }
 
 // What to spawn for a call. A .js executable always runs through the

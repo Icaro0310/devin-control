@@ -24,7 +24,13 @@ if command -v systemd-analyze >/dev/null 2>&1; then
     rm -f verify.err
 else
     for u in devin-bridge-intake.service devin-bridge-intake.path devin-bridge-intake.timer; do
-        grep -q '^\[Unit\]' "$u" && grep -q '^Unit=' "$u" || bad "$u lacks [Unit]/Unit="
+        grep -q '^\[Unit\]' "$u" || bad "$u lacks [Unit]"
+    done
+    # Unit= names the unit a trigger activates — valid in [Path]/[Timer],
+    # never in the service's own [Unit] section. Require it only where
+    # systemd expects the binding, pointed at this service.
+    for u in devin-bridge-intake.path devin-bridge-intake.timer; do
+        grep -q '^Unit=devin-bridge-intake\.service' "$u" || bad "$u lacks Unit=devin-bridge-intake.service"
     done
     grep -q '^ExecStart=/usr/bin/env devin-bridge intake' devin-bridge-intake.service || bad "service ExecStart"
     grep -q '^PathExistsGlob=.*inbox/\*\.json' devin-bridge-intake.path || bad "path glob"

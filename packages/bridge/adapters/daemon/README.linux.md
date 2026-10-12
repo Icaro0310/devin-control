@@ -73,18 +73,27 @@ without it, "ask" decisions fail closed and the task file lands in
 systemctl --user list-timers devin-bridge-intake.timer
 systemctl --user status devin-bridge-intake.path
 
-# Drop a real task file in the inbox, then read the last drain:
-echo '{"task":"ping"}' > ~/.local/state/devin-bridge/mailbox/inbox/smoke.json
-sleep 3
+# Trigger one drain by hand — an empty inbox is a cheap no-op, so this
+# exercises ExecStart/PATH/hardening without queuing any task:
+systemctl --user start devin-bridge-intake.service
 journalctl --user -u devin-bridge-intake.service -n 20 --no-pager
-ls ~/.local/state/devin-bridge/mailbox/done/ ~/.local/state/devin-bridge/mailbox/failed/
+
+# Exercise parse + mailbox plumbing with NO session and NO cost: dry-run
+# a task file in a THROWAWAY state dir. Do NOT drop test files into the
+# real inbox — the armed .path unit drains them for real.
+tmp=$(mktemp -d)
+mkdir -p -m 700 "$tmp/mailbox/inbox"
+echo '{"task":"ping"}' > "$tmp/mailbox/inbox/smoke.json"
+devin-bridge intake --state-dir "$tmp" --dry-run   # expect status "dry-run"
+rm -rf "$tmp"
 ```
 
-`{"task":"ping"}` passes `parseTask` and exercises the full path —
-policy gate, `devin acp` spawn, mailbox bookkeeping. It lands in `done/`
-when the whole pipeline works; `failed/` means the drain itself ran but
-policy/acp refused it — read the journal for which (e.g. an "ask"
-decision without `--yes` fails closed there, by design).
+`--dry-run` parses the file and reports `status: "dry-run"` without
+spawning `devin acp` — no session is created and nothing is billed. To
+exercise the FULL pipeline (policy gate, `devin acp` spawn, mailbox
+bookkeeping) drop a real task in the real inbox — knowing it creates a
+real Devin session (cost) and lands in `done/`/`failed/`; an "ask"
+decision without `--yes` fails closed into `failed/` by design.
 
 A crash-looping service shows as `activating (auto-restart)`, never in
 `systemctl --user list-units --state=failed` — check `NRestarts` in

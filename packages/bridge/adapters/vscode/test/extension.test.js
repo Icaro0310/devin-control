@@ -135,6 +135,23 @@ test("resolveWindowsEntry maps a .cmd shim to the npm .js entry", () => {
   assert.strictEqual(__internals__.resolveWindowsEntry(path.join(dir, "devin-bridge.exe")), null);
 });
 
+test("resolveWindowsEntry resolves a project-local node_modules/.bin shim", () => {
+  // Local install: <proj>/node_modules/.bin/devin-bridge.cmd sits beside
+  // <proj>/node_modules/@icaro0310/devin-bridge/bin/devin-bridge.js —
+  // the global-prefix layout must not be the only candidate.
+  const proj = fs.mkdtempSync(path.join(os.tmpdir(), "bridge-local-"));
+  const binDir = path.join(proj, "node_modules", ".bin");
+  fs.mkdirSync(binDir, { recursive: true });
+  const shim = path.join(binDir, "devin-bridge.cmd");
+  fs.writeFileSync(shim, "@echo off\r\n");
+  assert.strictEqual(__internals__.resolveWindowsEntry(shim), null);
+  const entry = path.join(proj, "node_modules", "@icaro0310",
+    "devin-bridge", "bin", "devin-bridge.js");
+  fs.mkdirSync(path.dirname(entry), { recursive: true });
+  fs.writeFileSync(entry, "// entry\n");
+  assert.strictEqual(__internals__.resolveWindowsEntry(shim), entry);
+});
+
 test("sessions spawns the whitelisted args in the workspace dir", async () => {
   calls.length = 0;
   nextResult = { code: 0, stdout: '[{"repo":"a","sessionId":"s1"},{"repo":"b","sessionId":"s2"}]', stderr: "" };
