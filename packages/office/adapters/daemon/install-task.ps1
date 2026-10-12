@@ -41,16 +41,19 @@ if (-not (Test-Path $daemonPy)) {
 }
 
 if (-not (Get-Command py -ErrorAction SilentlyContinue)) {
-    Write-Warning "'py' launcher is not on PATH for this session — " +
+    Write-Warning ("'py' launcher is not on PATH for this session — " +
         "install Python 3 for Windows first (python.org) or the task " +
-        "will fail at logon."
+        "will fail at logon.")
 }
 
 if ($PSCmdlet.ShouldProcess($TaskName, 'Register scheduled task')) {
     try {
-        # Patch the checkout path into the XML (literal string replace —
-        # Windows paths contain backslashes, so avoid -replace/regex).
-        $xml = (Get-Content -Raw -Path $xmlPath).Replace('__OFFICE_CHECKOUT__', $officeDir)
+        # Patch the checkout path into the XML — literal replace (Windows
+        # paths contain backslashes, so no -replace/regex) with an XML
+        # escape first: a checkout/user dir containing '&', '<' or '>'
+        # would otherwise produce malformed XML that registration rejects.
+        $escapedDir = [System.Security.SecurityElement]::Escape($officeDir)
+        $xml = (Get-Content -Raw -Path $xmlPath).Replace('__OFFICE_CHECKOUT__', $escapedDir)
         Register-ScheduledTask -TaskName $TaskName -Xml $xml -Force | Out-Null
     }
     catch {

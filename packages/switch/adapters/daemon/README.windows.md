@@ -20,9 +20,10 @@ No admin needed. Equivalent without the script:
 schtasks /create /tn "devin-switch-drift" /xml devin-switch-drift.task.xml /f
 ```
 
-The task's console output is not persisted by Task Scheduler. For a
-durable notification log, edit the action arguments to redirect, e.g.
-`/c devin-switch doctor >> "%USERPROFILE%\.devin\switch-drift.log" 2>&1`.
+Task Scheduler discards console output, so the shipped action appends
+the doctor report to `%LOCALAPPDATA%\devin-switch\drift.log` (the cmd
+wrapper creates the dir on first run) — the notification survives in a
+file, not just an exit code.
 
 ## Smoke check — did it run without silent failure?
 
@@ -31,6 +32,7 @@ Start-ScheduledTask -TaskName 'devin-switch-drift'
 Get-ScheduledTask -TaskName 'devin-switch-drift' | Get-ScheduledTaskInfo
 # LastTaskResult 0 = doctor ran clean (or drift only, which is WARN-level);
 # a sanity FAIL exits 1 and shows up here.
+Get-Content "$env:LOCALAPPDATA\devin-switch\drift.log" -Tail 30   # retained report
 devin-switch doctor   # same report, interactively
 ```
 

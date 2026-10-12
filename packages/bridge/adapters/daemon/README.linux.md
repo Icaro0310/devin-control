@@ -5,8 +5,12 @@
 
 Three units work together:
 
-- **`devin-bridge-intake.path`** watches `~/.local/state/devin-bridge/mailbox/inbox`
-  and fires the service the moment a task file lands (the fast path).
+- **`devin-bridge-intake.path`** watches `*.json` in
+  `~/.local/state/devin-bridge/mailbox/inbox` and fires the service the
+  moment a task file lands (the fast path). It watches a glob, not
+  directory-emptiness, so stray non-JSON files can't retrigger empty
+  drains until systemd's trigger limit stops the watch — and producers
+  must publish atomically (write a temp name, rename to `.json`).
 - **`devin-bridge-intake.timer`** re-runs the drain ~2 minutes after each
   run finishes (the fallback for suspend, network filesystems, or tasks
   dropped while the path unit was off).
@@ -14,10 +18,30 @@ Three units work together:
   `devin-bridge intake` — the same command you run by hand.
 
 The service is hardened: `NoNewPrivileges`, `PrivateTmp`,
-`ProtectSystem=strict` with writes whitelisted to the bridge state dir
-(`~/.local/state/devin-bridge`) and the Devin data/config roots
-(`~/.local/share/devin`, `~/.config/devin`, `~/.config/Devin`) that the
-spawned `devin acp` client needs.
+`ProtectSystem=strict`. `StateDirectory=devin-bridge` has systemd create
+`~/.local/state/devin-bridge` (and parents) at service start and keeps it
+writable — no missing-dir setup failure on a fresh profile.
+`ConfigurationDirectory=Devin devin` does the same for the Devin config
+roots the spawned `devin acp` may write. The Devin data root
+(`~/.local/share/devin`) is whitelisted as `-`-optional: absent entries
+are skipped instead of failing mount-namespace setup — a drain on a box
+with no Devin data dir then fails visibly (journal + `mailbox/failed/`),
+which is the honest outcome anyway.
+
+## What the scheduled drain sees (and doesn't)
+
+- **Policy:** `loadPolicy()` reads `<cwd>/policy.json` — the unit's
+  `WorkingDirectory=%h` makes that `~/policy.json`. Intake loads ONE
+  policy per drain; a task's `task.repo` `policy.json` is NOT consulted
+  (same semantics as running `devin-bridge intake` from your home dir).
+  Pin an explicit file with `--policy %h/policy.json` if your policy
+  lives elsewhere.
+- **Session map:** the unit passes
+  `--sessions-file ~/.local/state/devin-bridge/sessions.json` — inside
+  the writable state dir — while a manual run defaults to
+  `./.sessions.json`. Scheduled and interactive intakes therefore use
+  different maps unless you pass the same flag by hand; pass it if you
+  want repo→session continuity across both.
 
 ## Install
 
@@ -49,17 +73,30 @@ without it, "ask" decisions fail closed and the task file lands in
 systemctl --user list-timers devin-bridge-intake.timer
 systemctl --user status devin-bridge-intake.path
 
-# Drop a dry-run file in the inbox, then read the last drain:
-echo '{"prompt":"ping"}' > ~/.local/state/devin-bridge/mailbox/inbox/smoke.json
+# Drop a real task file in the inbox, then read the last drain:
+echo '{"task":"ping"}' > ~/.local/state/devin-bridge/mailbox/inbox/smoke.json
 sleep 3
 journalctl --user -u devin-bridge-intake.service -n 20 --no-pager
 ls ~/.local/state/devin-bridge/mailbox/done/ ~/.local/state/devin-bridge/mailbox/failed/
 ```
 
+`{"task":"ping"}` passes `parseTask` and exercises the full path —
+policy gate, `devin acp` spawn, mailbox bookkeeping. It lands in `done/`
+when the whole pipeline works; `failed/` means the drain itself ran but
+policy/acp refused it — read the journal for which (e.g. an "ask"
+decision without `--yes` fails closed there, by design).
+
 A crash-looping service shows as `activating (auto-restart)`, never in
 `systemctl --user list-units --state=failed` — check `NRestarts` in
 `systemctl --user show devin-bridge-intake.service -p NRestarts` if output
 looks absent.
+
+## Headless check
+
+`./verify.sh` in this directory lints the units (`systemd-analyze
+verify` when available), parses the task XML, and cross-checks that the
+ps1 scripts reference the shipped task names — the same checks the
+package's `tests/daemon-units.test.js` run in CI.
 
 ## Uninstall
 

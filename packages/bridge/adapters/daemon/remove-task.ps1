@@ -30,6 +30,6 @@ if ($PSCmdlet.ShouldProcess($TaskName, 'Unregister scheduled task')) {
         }
         throw
     }
-    Write-Host "Removed scheduled task '$TaskName'. The mailbox dir under " +
-        "%LOCALAPPDATA%\devin-bridge is left in place."
+    Write-Host ("Removed scheduled task '$TaskName'. The mailbox dir under " +
+        "%LOCALAPPDATA%\devin-bridge is left in place.")
 }

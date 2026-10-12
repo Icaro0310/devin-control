@@ -40,7 +40,7 @@ Get-ScheduledTask -TaskName 'devin-bridge-intake' | Get-ScheduledTaskInfo
 # LastTaskResult 0 = clean run; the inbox drain writes mailbox\done|failed.
 
 # Drop a task file and watch it move:
-'{"prompt":"ping"}' | Set-Content "$env:LOCALAPPDATA\devin-bridge\mailbox\inbox\smoke.json"
+'{"task":"ping"}' | Set-Content "$env:LOCALAPPDATA\devin-bridge\mailbox\inbox\smoke.json"
 Start-ScheduledTask -TaskName 'devin-bridge-intake'
 Get-ChildItem "$env:LOCALAPPDATA\devin-bridge\mailbox\done","$env:LOCALAPPDATA\devin-bridge\mailbox\failed"
 ```

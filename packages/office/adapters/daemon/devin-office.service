@@ -27,15 +27,19 @@ RestartSec=5
 
 # Hardening: the dashboard only READS Devin's stores (sqlite opened
 # mode=ro) and only ever talks to loopback — it binds 127.0.0.1 and its
-# eco probes hit 127.0.0.1 health endpoints. Writes stay denied except
-# the one dir that needs an O_RDWR handle: session_locks is probed with
-# an exclusive flock to detect live sessions — a read-only open would
-# fail EBADF and every session would report a false "held" lock.
+# eco probes hit 127.0.0.1 health endpoints. Writes stay confined to two
+# paths: (1) session_locks — probed with an exclusive O_RDWR flock to
+# detect live sessions (a read-only open would fail EBADF and every
+# session would report a false "held" lock); (2) the checkout itself —
+# POST /api/kanban persists closed-state to kanban.json beside daemon.py
+# via an atomic .tmp+rename, so the package dir MUST be writable or the
+# kanban API returns 400. Keep the second entry in sync with ExecStart
+# if you move the checkout.
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=%h/.local/share/devin/cli/session_locks
+ReadWritePaths=%h/.local/share/devin/cli/session_locks %h/devin/devin-ecosystem/devin-control/packages/office
 # Loopback only: serving the dashboard needs AF_INET/AF_INET6; the eco
 # probes only reach 127.0.0.1. If you set OFFICE_ECO_URL to a non-local
 # collector, drop the IPAddressDeny line.

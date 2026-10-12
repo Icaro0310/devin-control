@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Daemon adapters for the dashboard (`adapters/daemon/`):
+  `devin-office.service`, a user-level systemd unit keeping the resident
+  `daemon.py` server up (`Restart=on-failure`, loopback-confined,
+  `ReadWritePaths` covering `session_locks` for the flock probe and the
+  checkout for `kanban.json`), and a Windows `task.xml` +
+  `install-task.ps1`/`remove-task.ps1` pair (at-logon, no execution-time
+  cap; the installer resolves and XML-escapes the checkout path into the
+  action). `verify.sh` + `tests/test_daemon_adapter.py` cover the
+  artifacts.
+
 ### Changed
 
 - Docs: job agendado usa wrapper `.cmd` em `%USERPROFILE%\devin-tasks` + `Register-ScheduledTask -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"`; o wrapper antecede `%USERPROFILE%\.local\bin` ao `PATH` e o registro usa `-Force`.

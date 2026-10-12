@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Daemon adapters for the mailbox intake (`adapters/daemon/`):
+  `devin-bridge-intake.{service,path,timer}` user-level systemd units —
+  a `*.json` glob watch on the inbox plus a polling fallback around the
+  same `devin-bridge intake` CLI — and a Windows `task.xml` +
+  `install-task.ps1`/`remove-task.ps1` pair (logon trigger + 5-minute
+  repetition). The service auto-creates its state/config roots
+  (`StateDirectory`/`ConfigurationDirectory`) and marks the remaining
+  Devin root optional so a fresh profile can't fail mount setup.
+  `verify.sh` + `tests/daemon-units.test.js` cover the artifacts.
+
 ### Changed
 
 - README gains the generated `Part of the DEVIN ecosystem` block

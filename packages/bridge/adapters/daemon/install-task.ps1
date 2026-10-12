@@ -28,9 +28,9 @@ if (-not (Test-Path $xmlPath)) {
 }
 
 if (-not (Get-Command devin-bridge -ErrorAction SilentlyContinue)) {
-    Write-Warning "'devin-bridge' is not on PATH for this session — " +
+    Write-Warning ("'devin-bridge' is not on PATH for this session — " +
         "the task will fail until npm's global bin dir is on PATH " +
-        "(npm config get prefix)."
+        "(npm config get prefix).")
 }
 
 if ($PSCmdlet.ShouldProcess($TaskName, 'Register scheduled task')) {

@@ -49,6 +49,12 @@ diverged from the nearest profile — decide by hand whether to
 `devin-switch use <profile> --apply`. A `FAIL` line makes the service exit
 nonzero, which surfaces in `systemctl --user status`.
 
+## Headless check
+
+`./verify.sh` in this directory lints the units (`systemd-analyze
+verify` when available), parses the task XML, and cross-checks the ps1
+scripts — the same checks `tests/test_daemon_adapter.py` runs in CI.
+
 ## Uninstall
 
 ```bash

@@ -24,8 +24,8 @@ if (-not (Test-Path $xmlPath)) {
 }
 
 if (-not (Get-Command devin-switch -ErrorAction SilentlyContinue)) {
-    Write-Warning "'devin-switch' is not on PATH for this session — " +
-        "install it (uv tool install devin-switch) before enabling."
+    Write-Warning ("'devin-switch' is not on PATH for this session — " +
+        "install it (uv tool install devin-switch) before enabling.")
 }
 
 if ($PSCmdlet.ShouldProcess($TaskName, 'Register scheduled task')) {

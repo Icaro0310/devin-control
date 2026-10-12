@@ -8,19 +8,25 @@
 long as you are logged in. There is no timer — a resident server just
 needs `WantedBy=default.target`.
 
-The service is hardened for a read-only loopback server:
-`ProtectSystem=strict` + `ProtectHome=read-only` with one punched hole —
+The service is hardened for a read-mostly loopback server:
+`ProtectSystem=strict` + `ProtectHome=read-only` with two punched holes —
 `session_locks/` needs an `O_RDWR` handle for the flock probe that tells
 live sessions apart (a read-only open would make every session report a
-false "held" lock). `RestrictAddressFamilies` + `IPAddressAllow=localhost`
+false "held" lock), and **the checkout dir itself** stays writable
+because `POST /api/kanban` persists closed-state to `kanban.json` beside
+`daemon.py` (atomic `.tmp`+rename — a read-only checkout makes the kanban
+API return HTTP 400). `RestrictAddressFamilies` + `IPAddressAllow=localhost`
 /`IPAddressDeny=any` confine all I/O to loopback: the daemon binds
 127.0.0.1 and its eco probes only hit 127.0.0.1 health endpoints.
 
 ## Install
 
 ```bash
-# 1. Point ExecStart at YOUR devin-control checkout — the shipped path is
+# 1. Point ExecStart AND the second ReadWritePaths entry at YOUR
+#    devin-control checkout — the shipped path is
 #    %h/devin/devin-ecosystem/devin-control/packages/office.
+#    (ReadWritePaths covers the checkout so kanban.json can be written;
+#    moving ExecStart without it silently breaks the kanban API.)
 $EDITOR devin-office.service
 
 # 2. Install and start
@@ -48,12 +54,22 @@ journalctl --user -u devin-office.service -n 20 --no-pager
 # Expect: "devin-office smoke daemon -> http://localhost:8788"
 
 curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8788/api/state   # 200
+curl -s -X POST -H 'Content-Type: application/json' \
+  -d '{"id":"nonexistent","action":"close"}' http://localhost:8788/api/kanban
+# 4xx for the bogus id is fine — HTTP 400 mentioning read-only/EROFS
+# means ReadWritePaths lost the checkout entry.
 ```
 
 A crash loop shows as `activating (auto-restart)`; check `NRestarts`
 (`systemctl --user show devin-office.service -p NRestarts`) if the port
 stays closed. A common first-run failure is an `EROFS`/`EACCES` on
 `session_locks` — meaning the `ReadWritePaths` line was edited out.
+
+## Headless check
+
+`./verify.sh` in this directory lints the unit (`systemd-analyze
+verify` when available), parses the task XML, and cross-checks the ps1
+scripts — the same checks `tests/test_daemon_adapter.py` runs in CI.
 
 ## Uninstall
 

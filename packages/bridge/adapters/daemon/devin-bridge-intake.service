@@ -15,24 +15,41 @@ After=default.target
 
 [Service]
 Type=oneshot
+# loadPolicy() reads <cwd>/policy.json when --policy is not passed, so the
+# scheduled drain consults ~/policy.json — the same policy a manual
+# `devin-bridge intake` run from your home dir uses. NOTE: intake loads ONE
+# policy per drain; a task's task.repo policy.json is NOT consulted (CLI
+# semantics, identical for scheduled and home-cwd manual runs). To pin an
+# explicit file, append `--policy %h/policy.json` to ExecStart.
 WorkingDirectory=%h
 # devin-bridge is an npm global bin; npm/pipx-style prefixes are not in
 # systemd's compiled-in search path, so resolve via env(1) + an explicit
 # PATH that covers the common user prefixes.
 Environment=PATH=%h/.local/bin:%h/.npm-global/bin:%h/bin:/usr/local/bin:/usr/bin:/bin
 # --sessions-file keeps the repo->sessionId map inside the state dir so the
-# hardening below can whitelist every write the bridge performs.
+# hardening below can whitelist every write the bridge performs. NOTE: this
+# differs from the manual default (./.sessions.json) — pass the same flag
+# on manual runs if you want scheduled and interactive intakes to share
+# session continuity.
 ExecStart=/usr/bin/env devin-bridge intake --sessions-file %h/.local/state/devin-bridge/sessions.json
 # For unattended runs add `--yes` (auto-approves policy "ask" prompts —
 # understand your policy.json before enabling).
 
-# Hardening: everything the bridge writes lives under its state dir; Devin
-# stores are written by the spawned `devin acp` client under the two Devin
-# roots below. Reads elsewhere stay allowed; writes are confined.
+# Hardening: everything the bridge writes lives under its state dir.
+# StateDirectory creates $XDG_STATE_HOME/devin-bridge (with parents) at
+# service start and keeps it writable under ProtectSystem=strict — no
+# missing-dir setup failure on a fresh profile. ConfigurationDirectory
+# does the same for the two Devin config roots the spawned `devin acp`
+# client may write. The remaining Devin data root is marked optional with
+# "-": if absent the entry is skipped (no mount-namespace setup failure);
+# `devin acp` then fails visibly in the journal and the task lands in
+# mailbox/failed/ — a bridge with no Devin data dir cannot drain anyway.
+StateDirectory=devin-bridge
+ConfigurationDirectory=Devin devin
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ReadWritePaths=%h/.local/state/devin-bridge %h/.local/share/devin %h/.config/devin %h/.config/Devin
+ReadWritePaths=-%h/.local/share/devin
 
 [Install]
 # Enabled via the .path/.timer units; install nothing here.

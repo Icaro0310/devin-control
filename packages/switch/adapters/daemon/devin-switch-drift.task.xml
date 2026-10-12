@@ -4,9 +4,10 @@
 
   Trigger: at logon + once daily — a machine suspended at the clock slot
   still gets the check at next logon; StartWhenAvailable adds a catch-up.
-  The task runs `devin-switch doctor` and leaves output in the task's
-  last-run result; pair with `> %USERPROFILE%\.devin\switch-drift.log`
-  style redirection (edit Arguments) if you want a durable log file.
+  The task runs `devin-switch doctor` and APPENDS the report to
+  %LOCALAPPDATA%\devin-switch\drift.log — Task Scheduler discards console
+  output, so without the redirect detected drift would be invisible in
+  LastTaskResult (exit code only).
 
   Import with install-task.ps1 (user scope, no admin) or:
     schtasks /create /tn "devin-switch-drift" /xml devin-switch-drift.task.xml
@@ -50,7 +51,10 @@
   <Actions Context="Author">
     <Exec>
       <Command>cmd.exe</Command>
-      <Arguments>/c devin-switch doctor</Arguments>
+      <!-- Create the log dir once, then append the doctor report —
+           Task Scheduler does not persist console output. (& must be
+           &amp; inside XML; > is legal as-is.) -->
+      <Arguments>/c if not exist "%LOCALAPPDATA%\devin-switch" mkdir "%LOCALAPPDATA%\devin-switch" &amp; devin-switch doctor >> "%LOCALAPPDATA%\devin-switch\drift.log" 2>&amp;1</Arguments>
     </Exec>
   </Actions>
 </Task>
