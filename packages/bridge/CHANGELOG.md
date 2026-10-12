@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`StateDirectory`/`ConfigurationDirectory`) and marks the remaining
   Devin root optional so a fresh profile can't fail mount setup.
   `verify.sh` + `tests/daemon-units.test.js` cover the artifacts.
+- VS Code adapter (`adapters/vscode/`): read-only views of `sessions --json`, `policy --show`, `policy --check`, and `probe --no-session` behind a status bar. Every CLI call passes through a single funnel of whitelisted literal arg arrays — session control (`new`/`resume`/`prompt`/`intake`, `policy --init`, session-creating probes) is unreachable from the editor. Pins `devin-bridge-cli >=0.1.0,<0.2.0`.
+- `parseArgs` honors the `--` end-of-options marker: tokens after `--` are positional, so `policy --check <cap> -- <target>` accepts option-shaped targets such as `--version` literally.
 
 ### Changed
 
