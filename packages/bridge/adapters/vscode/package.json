@@ -1,0 +1,69 @@
+{
+  "name": "devin-bridge",
+  "displayName": "devin-bridge",
+  "description": "Read-only views of the devin-bridge ACP bridge: session mappings, effective policy, and the no-session connectivity probe. Thin adapter: the extension shells out to the devin-bridge CLI and renders the result — and by construction it can never reach new/resume/prompt/intake, so no session can be created or driven from the editor.",
+  "version": "0.1.0",
+  "publisher": "icaro0310",
+  "license": "MIT",
+  "devin-bridge-cli": ">=0.1.0,<0.2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Icaro0310/devin-control.git",
+    "directory": "packages/bridge/adapters/vscode"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "devin",
+    "acp",
+    "policy",
+    "sessions"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "devin-bridge.sessions",
+        "title": "devin-bridge: List sessions"
+      },
+      {
+        "command": "devin-bridge.policy",
+        "title": "devin-bridge: Show effective policy"
+      },
+      {
+        "command": "devin-bridge.policyCheck",
+        "title": "devin-bridge: Check policy decision for a capability"
+      },
+      {
+        "command": "devin-bridge.probe",
+        "title": "devin-bridge: Probe ACP connectivity (no session)"
+      }
+    ],
+    "configuration": {
+      "title": "devin-bridge",
+      "properties": {
+        "devinBridge.executable": {
+          "type": "string",
+          "default": "devin-bridge",
+          "description": "devin-bridge executable (name or absolute path)"
+        },
+        "devinBridge.checkOnStartup": {
+          "type": "boolean",
+          "default": false,
+          "description": "List bridge sessions when VS Code starts"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "devDependencies": {}
+}
