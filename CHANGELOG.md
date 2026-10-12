@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Docs** — corporate-Windows guides: Zscaler root export now covers both
+  certificate stores (`certmgr.msc`/`certlm.msc`,
+  `Cert:\CurrentUser\Root` + `Cert:\LocalMachine\Root`) and yields PEM
+  (Base-64 wizard export, or `certutil -encode` after
+  `Export-Certificate`, which writes DER).
 - **Docs** — refreshed the generated `Part of the DEVIN ecosystem` block: journey recuration v2 (six paths, zero repeats, `Local-first ops` label, `devin-bridge` in DevOps).
 - **Docs** — ecosystem journey recuration applied (six curated audiences); stale `Path:` line removed from the devin-bridge eco-block, which is not a registry entry.
 - **CI** — Ruff lint job added (`astral-sh/ruff-action`, pinned);
