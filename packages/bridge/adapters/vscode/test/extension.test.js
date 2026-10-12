@@ -1,7 +1,17 @@
 "use strict";
 
-// Minimal vscode stub injected before requiring the extension — enough for
-// the pure paths to run outside the editor.
+// Minimal vscode + child_process stubs injected before requiring the
+// extension — every runBridge call is captured so tests can assert what
+// actually reaches the spawned process.
+const statusBarStub = {
+  text: "", tooltip: "", backgroundColor: undefined, command: "",
+  show() {}, hide() {}, dispose() {},
+};
+const calls = []; // { exe, args, opts }
+let nextResult = { code: 0, stdout: "[]", stderr: "" };
+let quickPickValue;
+let inputBoxValue;
+
 const vscodeStub = {
   ThemeColor: class {
     constructor(id) {
@@ -16,11 +26,11 @@ const vscodeStub = {
     }
   },
   window: {
-    createStatusBarItem: () => ({ show() {}, hide() {} }),
+    createStatusBarItem: () => statusBarStub,
     showInformationMessage: () => Promise.resolve(),
     showErrorMessage: () => Promise.resolve(),
-    showQuickPick: () => Promise.resolve(undefined),
-    showInputBox: () => Promise.resolve(undefined),
+    showQuickPick: () => Promise.resolve(quickPickValue),
+    showInputBox: () => Promise.resolve(inputBoxValue),
     showTextDocument: () => Promise.resolve({ edit: async () => true }),
   },
   workspace: {
@@ -31,16 +41,42 @@ const vscodeStub = {
   commands: { registerCommand: () => ({ dispose() {} }) },
 };
 
+const cpStub = {
+  execFile: (exe, args, opts, cb) => {
+    calls.push({ exe, args, opts });
+    const err = nextResult.code
+      ? Object.assign(new Error(`exit ${nextResult.code}`), { code: nextResult.code })
+      : null;
+    cb(err, nextResult.stdout, nextResult.stderr);
+  },
+};
+
 const Module = require("module");
 const origRequire = Module.prototype.require;
 Module.prototype.require = function (id) {
   if (id === "vscode") return vscodeStub;
+  if (id === "child_process") return cpStub;
   return origRequire.apply(this, arguments);
 };
 
-const { __internals__ } = require("../extension.js");
+const ext = require("../extension.js");
+const { __internals__ } = ext;
 const test = require("node:test");
 const assert = require("node:assert");
+
+ext.activate({ subscriptions: [] });
+
+const FORBIDDEN = new Set([
+  "new", "resume", "prompt", "intake",
+  "--init", "--apply", "--force", "--yes", "--dry-run", "--file", "--model",
+]);
+const assertCallsReadOnly = () => {
+  for (const c of calls) {
+    for (const token of c.args) {
+      assert.ok(!FORBIDDEN.has(token), `forbidden arg reached the CLI: ${token}`);
+    }
+  }
+};
 
 test("READONLY_ARGS is exactly the read-only CLI surface", () => {
   assert.deepStrictEqual(__internals__.READONLY_ARGS, {
@@ -48,10 +84,6 @@ test("READONLY_ARGS is exactly the read-only CLI surface", () => {
     policyShow: ["policy", "--show"],
     probe: ["probe", "--no-session"],
   });
-});
-
-test("probe args always include --no-session", () => {
-  assert.ok(__internals__.READONLY_ARGS.probe.includes("--no-session"));
 });
 
 test("CAPS is the fixed capability enum", () => {
@@ -62,4 +94,74 @@ test("parseJson parses payloads and names the command on failure", () => {
   const parse = __internals__.parseJson;
   assert.deepStrictEqual(parse('[{"repo":"x"}]', "sessions"), [{ repo: "x" }]);
   assert.throws(() => parse("(no sessions)", "sessions"), /sessions/);
+});
+
+test("sessions spawns the whitelisted args in the workspace dir", async () => {
+  calls.length = 0;
+  nextResult = { code: 0, stdout: '[{"repo":"a","sessionId":"s1"},{"repo":"b","sessionId":"s2"}]', stderr: "" };
+  const list = await __internals__.sessions();
+  assert.strictEqual(list.length, 2);
+  assert.strictEqual(calls.length, 1);
+  assert.deepStrictEqual(calls[0].args, ["sessions", "--json"]);
+  assert.strictEqual(calls[0].opts.cwd, "/repo");
+  assert.strictEqual(calls[0].opts.shell, process.platform === "win32");
+  assert.match(statusBarStub.text, /2 sessions/);
+  assertCallsReadOnly();
+});
+
+test("policy --show renders the effective policy", async () => {
+  calls.length = 0;
+  nextResult = { code: 0, stdout: '{"version":1,"rules":[]}', stderr: "" };
+  await __internals__.policyShow();
+  assert.deepStrictEqual(calls[0].args, ["policy", "--show"]);
+  assertCallsReadOnly();
+});
+
+test("policyCheck passes cap and a -- end-of-options marker before the target", async () => {
+  calls.length = 0;
+  quickPickValue = "terminal";
+  inputBoxValue = "--version";
+  nextResult = { code: 0, stdout: '{"capability":"terminal","target":"--version","decision":"ask"}', stderr: "" };
+  const decision = await __internals__.policyCheck();
+  assert.strictEqual(decision.target, "--version");
+  assert.deepStrictEqual(calls[0].args, ["policy", "--check", "terminal", "--", "--version"]);
+  assertCallsReadOnly();
+});
+
+test("policyCheck aborts without spawning when input is cancelled", async () => {
+  calls.length = 0;
+  quickPickValue = undefined;
+  inputBoxValue = "x";
+  await __internals__.policyCheck();
+  quickPickValue = "fsRead";
+  inputBoxValue = undefined;
+  await __internals__.policyCheck();
+  assert.strictEqual(calls.length, 0);
+});
+
+test("probe always runs --no-session and renders the verdict", async () => {
+  calls.length = 0;
+  nextResult = { code: 0, stdout: '{"ok":true,"checks":[{"check":"init","ok":true}]}', stderr: "" };
+  const okReport = await __internals__.probe();
+  assert.strictEqual(okReport.ok, true);
+  assert.deepStrictEqual(calls[0].args, ["probe", "--no-session"]);
+  assert.match(statusBarStub.text, /connected/);
+
+  nextResult = { code: 1, stdout: '{"ok":false,"checks":[{"check":"init","ok":false}]}', stderr: "" };
+  const failReport = await __internals__.probe();
+  assert.strictEqual(failReport.ok, false);
+  assert.match(statusBarStub.text, /probe failed/);
+  assert.strictEqual(statusBarStub.backgroundColor.id, "statusBarItem.errorBackground");
+  assertCallsReadOnly();
+});
+
+test("a failed call renders unavailable without leaving a stale color", async () => {
+  statusBarStub.backgroundColor = { id: "statusBarItem.warningBackground" };
+  calls.length = 0;
+  nextResult = { code: 2, stdout: "", stderr: "boom" };
+  const out = await __internals__.sessions();
+  assert.strictEqual(out, null);
+  assert.match(statusBarStub.text, /unavailable/);
+  assert.strictEqual(statusBarStub.backgroundColor, undefined);
+  assertCallsReadOnly();
 });

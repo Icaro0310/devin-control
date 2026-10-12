@@ -51,29 +51,27 @@ function workspaceDir() {
   return folders[0].uri.fsPath;
 }
 
-// Runs the CLI once and resolves {code, stdout, stderr}. Never throws on a
-// non-zero exit — probe exits 1 when a check fails, which is a renderable
-// result, not an error.
+// Runs the CLI once, resolves {code, stdout, stderr}; non-zero exit is a
+// renderable result (probe exits 1 on a failed check), not an error.
+// On Windows the npm install is a .cmd shim execFile cannot launch —
+// shell:true routes through cmd.exe; Node quotes each argv element for
+// cmd, so user input stays one argument, never unescaped shell text.
 function runBridge(args) {
   const { executable } = config();
   return new Promise((resolve, reject) => {
     cp.execFile(
       executable,
       args,
-      { cwd: workspaceDir(), timeout: 120000, maxBuffer: 8 * 1024 * 1024 },
+      { cwd: workspaceDir(), timeout: 120000, maxBuffer: 8 * 1024 * 1024,
+        shell: process.platform === "win32" },
       (err, stdout, stderr) => {
         if (err && err.killed) {
           reject(new Error("devin-bridge timed out after 120s"));
           return;
         }
         if (err && err.code === "ENOENT") {
-          reject(
-            new Error(
-              "devin-bridge not found on PATH. Install it " +
-              "(npm i -g @icaro0310/devin-bridge) or set devinBridge.executable.",
-            ),
-          );
-          return;
+          return reject(new Error("devin-bridge not found on PATH. Install it " +
+            "(npm i -g @icaro0310/devin-bridge) or set devinBridge.executable."));
         }
         resolve({ code: err ? err.code : 0, stdout, stderr });
       },
@@ -105,21 +103,18 @@ function render(text, tooltip, bg) {
 
 async function sessions() {
   const mySeq = ++seq;
-  render("$(sync~spin) bridge: sessions", "Listing devin-bridge sessions", undefined);
+  render("$(sync~spin) bridge: sessions", "Listing devin-bridge sessions");
   try {
     const { stdout } = await runBridge(READONLY_ARGS.sessions);
     const list = parseJson(stdout, "sessions");
     if (mySeq === seq) {
-      render(
-        `$(server) bridge: ${list.length} session${list.length === 1 ? "" : "s"}`,
-        "devin-bridge sessions in this workspace",
-        undefined,
-      );
+      render(`$(server) bridge: ${list.length} session${list.length === 1 ? "" : "s"}`,
+        "devin-bridge sessions in this workspace");
     }
     await showJson(list);
     return list;
   } catch (e) {
-    if (mySeq === seq) render("$(error) bridge: unavailable", e.message, undefined);
+    if (mySeq === seq) render("$(error) bridge: unavailable", e.message);
     vscode.window.showErrorMessage(e.message);
     return null;
   }
@@ -137,7 +132,9 @@ async function policyCheck() {
     prompt: `Target to test against the ${cap} rule (command, path or host)`,
   });
   if (target === undefined) return;
-  const { stdout, stderr } = await runBridge(["policy", "--check", cap, target]);
+  // The CLI parser treats "--"-prefixed tokens as options — "--" ends
+  // option parsing so targets like "--version" reach the check literally.
+  const { stdout, stderr } = await runBridge(["policy", "--check", cap, "--", target]);
   const decision = parseJson(stdout, "policy check");
   vscode.window.showInformationMessage(
     `devin-bridge policy: ${decision.capability} ${JSON.stringify(decision.target)} → ${decision.decision}`,
@@ -193,4 +190,7 @@ function deactivate() {}
 
 module.exports = { activate, deactivate };
 // Test-only surface — pure internals reachable without the editor.
-module.exports.__internals__ = { COMPATIBLE_CLI, READONLY_ARGS, CAPS, parseJson };
+module.exports.__internals__ = {
+  COMPATIBLE_CLI, READONLY_ARGS, CAPS, parseJson,
+  sessions, policyShow, policyCheck, probe,
+};

@@ -44,6 +44,9 @@ function parseArgs(argv) {
   const opts = { _: [] };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
+    // End-of-options marker: everything after "--" is positional, so
+    // targets like "--version" reach commands literally (policy --check).
+    if (a === "--") { opts._.push(...argv.slice(i + 1)); break; }
     if (!a.startsWith("--")) { opts._.push(a); continue; }
     const [k, inline] = a.slice(2).split("=", 2);
     if (inline !== undefined) { opts[k] = inline; continue; }
