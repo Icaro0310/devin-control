@@ -15,9 +15,12 @@
 - `policy --check` inserts a `--` end-of-options marker before the
   target so option-shaped targets (`--version`, `--json`) reach the
   check literally.
-- Windows support: commands launch via `shell: true` on win32 (the npm
-  install is a `.cmd` shim); Node quotes each argv element for cmd, so
-  user input stays a single argument.
+- Windows support without a shell: the npm `.cmd` shim is resolved via
+  `where.exe` and the CLI entry (`bin/devin-bridge.js` under the npm
+  prefix) runs on the editor's own Node — `execFile`-only, so a target
+  like `x & calc` can never be reinterpreted by `cmd`. Fail-closed:
+  unresolvable shims surface the install hint instead of a shell
+  fallback.
 - `devin-bridge-cli` pin (`>=0.1.0,<0.2.0`) in package.json, kept in
   sync with `COMPATIBLE_CLI` and `packages/bridge/package.json` by
   cli-contract.test.js.

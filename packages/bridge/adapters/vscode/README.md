@@ -40,12 +40,11 @@ the same directory.
 | `devin-bridge: List sessions` | `devin-bridge sessions --json` → status bar count + JSON document |
 | `devin-bridge: Show effective policy` | `devin-bridge policy --show` → JSON document |
 | `devin-bridge: Check policy decision` | `devin-bridge policy --check <cap> -- <target>` → decision toast |
-
-Notes: the `--` end-of-options marker lets option-shaped targets (e.g.
-`--version`) reach the check literally. On Windows the npm install is a
-`.cmd` shim, so the adapter launches via `shell: true` on win32 — Node
-quotes each argv element for `cmd`, keeping user input a single argument.
 | `devin-bridge: Probe ACP connectivity` | `devin-bridge probe --no-session` → status bar verdict + JSON report |
+
+Note: the `--` end-of-options marker lets option-shaped targets (e.g.
+`--version`) reach the check literally. Windows launch details live in
+[README.windows.md](README.windows.md).
 
 ## Settings
 

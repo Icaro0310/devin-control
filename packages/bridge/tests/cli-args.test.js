@@ -45,4 +45,11 @@ describe("cli arg parsing", () => {
     // first positional after the marker is the target
     assert.strictEqual(decision.target, "--json");
   });
+
+  it("metachar targets reach the check as one literal arg", () => {
+    const r = run(["policy", "--check", "terminal", "--", "x & calc"]);
+    assert.strictEqual(r.code, 0, r.stderr);
+    const decision = JSON.parse(r.stdout.trim());
+    assert.strictEqual(decision.target, "x & calc");
+  });
 });

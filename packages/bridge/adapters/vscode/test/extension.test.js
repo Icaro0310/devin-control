@@ -8,6 +8,7 @@ const statusBarStub = {
   show() {}, hide() {}, dispose() {},
 };
 const calls = []; // { exe, args, opts }
+let settings = {};
 let nextResult = { code: 0, stdout: "[]", stderr: "" };
 let quickPickValue;
 let inputBoxValue;
@@ -34,7 +35,7 @@ const vscodeStub = {
     showTextDocument: () => Promise.resolve({ edit: async () => true }),
   },
   workspace: {
-    getConfiguration: () => ({ get: (k, d) => d }),
+    getConfiguration: () => ({ get: (k, d) => (k in settings ? settings[k] : d) }),
     workspaceFolders: [{ uri: { fsPath: "/repo" } }],
     openTextDocument: () => Promise.resolve({}),
   },
@@ -63,6 +64,9 @@ const ext = require("../extension.js");
 const { __internals__ } = ext;
 const test = require("node:test");
 const assert = require("node:assert");
+const fs = require("node:fs");
+const path = require("node:path");
+const os = require("node:os");
 
 ext.activate({ subscriptions: [] });
 
@@ -75,6 +79,7 @@ const assertCallsReadOnly = () => {
     for (const token of c.args) {
       assert.ok(!FORBIDDEN.has(token), `forbidden arg reached the CLI: ${token}`);
     }
+    assert.ok(!("shell" in c.opts), "spawn must never use a shell");
   }
 };
 
@@ -96,6 +101,40 @@ test("parseJson parses payloads and names the command on failure", () => {
   assert.throws(() => parse("(no sessions)", "sessions"), /sessions/);
 });
 
+test("spawnSpec execFiles the CLI directly — never a shell", () => {
+  settings = {};
+  const spec = __internals__.spawnSpec(["sessions", "--json"]);
+  if (process.platform === "win32") {
+    // resolution may or may not find a shim here, but the file is either
+    // the bare executable or node on a resolved .js entry — never cmd.
+    assert.notStrictEqual(spec.file, "cmd.exe");
+  } else {
+    assert.deepStrictEqual(spec, { file: "devin-bridge", argv: ["sessions", "--json"] });
+  }
+});
+
+test("a .js executable spawns through the editor's own node", () => {
+  settings = { executable: "/opt/bridge/bin/devin-bridge.js" };
+  const spec = __internals__.spawnSpec(["sessions", "--json"]);
+  assert.strictEqual(spec.file, process.execPath);
+  assert.deepStrictEqual(spec.argv, ["/opt/bridge/bin/devin-bridge.js", "sessions", "--json"]);
+  settings = {};
+});
+
+test("resolveWindowsEntry maps a .cmd shim to the npm .js entry", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bridge-shim-"));
+  const shim = path.join(dir, "devin-bridge.cmd");
+  fs.writeFileSync(shim, "@echo off\r\n");
+  assert.strictEqual(__internals__.resolveWindowsEntry(shim), null);
+  const entry = path.join(dir, "node_modules", "@icaro0310",
+    "devin-bridge", "bin", "devin-bridge.js");
+  fs.mkdirSync(path.dirname(entry), { recursive: true });
+  fs.writeFileSync(entry, "// entry\n");
+  assert.strictEqual(__internals__.resolveWindowsEntry(shim), entry);
+  // Non-shim files never resolve to an entry.
+  assert.strictEqual(__internals__.resolveWindowsEntry(path.join(dir, "devin-bridge.exe")), null);
+});
+
 test("sessions spawns the whitelisted args in the workspace dir", async () => {
   calls.length = 0;
   nextResult = { code: 0, stdout: '[{"repo":"a","sessionId":"s1"},{"repo":"b","sessionId":"s2"}]', stderr: "" };
@@ -104,7 +143,6 @@ test("sessions spawns the whitelisted args in the workspace dir", async () => {
   assert.strictEqual(calls.length, 1);
   assert.deepStrictEqual(calls[0].args, ["sessions", "--json"]);
   assert.strictEqual(calls[0].opts.cwd, "/repo");
-  assert.strictEqual(calls[0].opts.shell, process.platform === "win32");
   assert.match(statusBarStub.text, /2 sessions/);
   assertCallsReadOnly();
 });
@@ -126,6 +164,16 @@ test("policyCheck passes cap and a -- end-of-options marker before the target", 
   assert.strictEqual(decision.target, "--version");
   assert.deepStrictEqual(calls[0].args, ["policy", "--check", "terminal", "--", "--version"]);
   assertCallsReadOnly();
+});
+
+test("a metachar target reaches the CLI as ONE literal arg (no injection)", async () => {
+  calls.length = 0;
+  quickPickValue = "terminal";
+  inputBoxValue = "x & calc";
+  nextResult = { code: 0, stdout: '{"capability":"terminal","target":"x & calc","decision":"ask"}', stderr: "" };
+  await __internals__.policyCheck();
+  assert.deepStrictEqual(calls[0].args, ["policy", "--check", "terminal", "--", "x & calc"]);
+  assert.ok(!("shell" in calls[0].opts), "no shell anywhere near a metachar target");
 });
 
 test("policyCheck aborts without spawning when input is cancelled", async () => {
