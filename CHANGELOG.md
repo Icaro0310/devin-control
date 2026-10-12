@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Docs** — corporate-Windows guides: Zscaler root export now covers both
+  certificate stores (`certmgr.msc`/`certlm.msc`,
+  `Cert:\CurrentUser\Root` + `Cert:\LocalMachine\Root`) and yields PEM
+  (Base-64 wizard export, or `certutil -encode` after
+  `Export-Certificate`, which writes DER).
 - **Hooks** — `.pre-commit-hooks.yaml` adds `devin-switch-gate`, a
   `language: system` hook running `devin-switch doctor` (read-only;
   exits 1 on any FAIL) so consumers can gate commits on Devin config
