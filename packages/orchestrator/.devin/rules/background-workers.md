@@ -22,5 +22,12 @@ Toda sessão segue esta política de fan-out (via `run_subagent` nativo — o `d
    reportar; nunca declarar concluído sem ler os relatórios dos workers.
 6. **Trivial inline** — typos, perguntas e unidade única não justificam
    fan-out.
+7. **Reuso de sessão do repo** — trabalho em repositório reutiliza a
+   sessão mapeada em `.sessions.json`: resume the recorded devin session,
+   never create another session.
+8. **Session store intocável** — workers never read or write any
+   live devin session database.
+9. **Publicação gateada** — commit, push ou release só depois que os
+   testes passam **e** the user explicitly requests essa ação.
 
 Consulta de planos registrados (somente leitura — planning e dispatch são ação humana via CLI): skill `devin-orchestrator`.

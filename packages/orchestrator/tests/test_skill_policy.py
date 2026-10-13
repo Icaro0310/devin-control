@@ -60,6 +60,11 @@ class SkillPolicyTests(unittest.TestCase):
             "devin_inside_subagent",
             "devin-orchestrator plan",
             "ação humana via cli",
+            ".sessions.json",
+            "resume the recorded devin session",
+            "never create another session",
+            "live devin session database",
+            "explicitly requests",
         )
         for marker in required_markers:
             with self.subTest(marker=marker):
