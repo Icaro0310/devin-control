@@ -204,6 +204,30 @@ source-installed `devin-switch-mcp` directly or point a local manifest
 copy at the checkout (`uvx --from './packages/switch[mcp]'
 devin-switch-mcp`).
 
+The same stdio server registers in other MCP hosts:
+
+**Zed** — `context_servers` in `settings.json`:
+
+```json
+{
+  "context_servers": {
+    "devin-switch": { "command": { "path": "devin-switch-mcp", "args": [] } }
+  }
+}
+```
+
+**JetBrains** — Settings → Tools → AI Assistant → Model Context Protocol → Add:
+
+```json
+{ "mcpServers": { "devin-switch": { "command": "devin-switch-mcp" } } }
+```
+
+**Antigravity** — `~/.gemini/config/mcp_config.json`:
+
+```json
+{ "mcpServers": { "devin-switch": { "command": "devin-switch-mcp" } } }
+```
+
 ## Related
 
 - [`devin-doctor`](https://github.com/Icaro0310/devin-explore) — diagnoses
