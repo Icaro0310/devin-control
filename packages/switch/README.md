@@ -184,6 +184,26 @@ The test suite runs entirely against fake Devin roots — no real
 installation is touched, and `credentials.toml` fixtures are only ever
 checked by digest.
 
+## Adapters (MCP server, Devin skill, plugin)
+
+`devin_switch.mcp_server` exposes the read-only half of the CLI as MCP
+tools (`switch_list_profiles`, `switch_preview`, `switch_diff`,
+`switch_status`) via the `devin-switch-mcp` entry point
+(`pip install 'devin-switch[mcp]'`). The write path stays CLI-only for
+a human. Profile descriptions are passed through the same secret
+masking the diff output uses before they reach the MCP client.
+
+`adapters/` is a self-contained Devin plugin root
+(`adapters/.devin-plugin/plugin.json` + `adapters/skills/devin-switch/SKILL.md`),
+installed with
+`devin plugins install Icaro0310/devin-control#packages/switch/adapters` —
+it ships in the repo, not inside the wheel. The manifest launches the
+server through `uvx --from 'devin-switch[mcp]' devin-switch-mcp`, which
+resolves once the first PyPI release ships; until then run a
+source-installed `devin-switch-mcp` directly or point a local manifest
+copy at the checkout (`uvx --from './packages/switch[mcp]'
+devin-switch-mcp`).
+
 ## Related
 
 - [`devin-doctor`](https://github.com/Icaro0310/devin-explore) — diagnoses

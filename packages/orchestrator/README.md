@@ -63,6 +63,14 @@ Every fanned-out plan carries `collect=true`: the parent must gather worker
 results before reporting. The plan is data only — no paths, no URLs, no
 commands; the planner cannot create repos or touch the filesystem.
 
+The "enforced in code" guarantees above apply only to plans computed by
+the CLI (`devin-orchestrator plan`, a human action). When a workspace
+session fans out natively via `run_subagent` under
+`.devin/rules/background-workers.md`, the planner never runs — the same
+caps exist only as model instructions in the rule, and the
+`DEVIN_MAX_WORKERS`/`DEVIN_INSIDE_SUBAGENT` environment checks do not
+execute.
+
 
 ### `--explain` and file disjointness
 

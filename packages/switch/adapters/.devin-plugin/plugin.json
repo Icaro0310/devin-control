@@ -1,0 +1,15 @@
+{
+  "name": "devin-switch",
+  "version": "0.1.0",
+  "description": "Switch between Devin configuration profiles (hooks, MCP, models) with snapshot and verification. Read-only adapter surface: status check, profile list, masked diffs and dry-run previews.",
+  "author": { "name": "Icaro0310" },
+  "repository": "https://github.com/Icaro0310/devin-control",
+  "license": "MIT",
+  "keywords": ["devin", "switch", "profiles", "config"],
+  "mcpServers": {
+    "devin-switch": {
+      "command": "uvx",
+      "args": ["--from", "devin-switch[mcp]", "devin-switch-mcp"]
+    }
+  }
+}

@@ -1,12 +1,17 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   mailboxDir, checkPermissions, parseTask, listInbox, moveTo,
   MAX_TASK_BYTES,
 } from "../src/mailbox.js";
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const BRIDGE = path.join(HERE, "..", "bin", "devin-bridge.js");
 
 let dir;
 beforeEach(() => {
@@ -107,5 +112,41 @@ describe("listInbox / moveTo", () => {
     assert.ok(!fs.existsSync(f));
     assert.ok(fs.existsSync(dst));
     assert.match(path.basename(dst), /-a\.json$/);
+  });
+});
+
+describe("intake CLI (subprocess)", () => {
+  // Pins the dry-run/real-run split in bin/devin-bridge.js: dry-run never
+  // builds an ACP client so the policy load is skipped there; a real run
+  // still loads it before any task leaves inbox/.
+  const stageFiles = (root, stage) =>
+    fs.readdirSync(path.join(root, stage)).filter((f) => f.endsWith(".json"));
+  const intake = (args) => spawnSync(
+    process.execPath, [BRIDGE, "intake", "--state-dir", dir, ...args],
+    { cwd: dir, encoding: "utf8" });
+
+  it("--dry-run validates tasks even with a missing --policy", () => {
+    const root = mailboxDir(dir);
+    fs.writeFileSync(path.join(root, "inbox", "t1.json"),
+      JSON.stringify({ task: "summarise the diff" }));
+    const res = intake(["--dry-run", "--policy", path.join(dir, "gone.json")]);
+    assert.equal(res.status, 0, res.stderr);
+    const out = JSON.parse(res.stdout);
+    assert.deepEqual(out.results.map((r) => [r.file, r.status]),
+      [["t1.json", "dry-run"]]);
+    assert.deepEqual(stageFiles(root, "inbox"), ["t1.json"]);
+  });
+
+  it("a real run aborts on a bad --policy before any file leaves inbox/", () => {
+    const root = mailboxDir(dir);
+    fs.writeFileSync(path.join(root, "inbox", "t1.json"),
+      JSON.stringify({ task: "summarise the diff" }));
+    const res = intake(["--policy", path.join(dir, "gone.json")]);
+    assert.equal(res.status, 1);
+    assert.match(res.stderr, /cannot load policy/);
+    assert.deepEqual(stageFiles(root, "inbox"), ["t1.json"]);
+    for (const stage of ["processing", "done", "failed"]) {
+      assert.deepEqual(stageFiles(root, stage), []);
+    }
   });
 });

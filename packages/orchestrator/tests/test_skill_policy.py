@@ -7,6 +7,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILL_PATH = ROOT / ".devin" / "skills" / "devin-orchestrator" / "SKILL.md"
+RULE_PATH = ROOT / ".devin" / "rules" / "background-workers.md"
 EVALS_PATH = ROOT / "evals" / "evals.json"
 
 
@@ -22,29 +23,43 @@ class SkillPolicyTests(unittest.TestCase):
         self.assertIn("triggers: [model, user]", frontmatter)
         self.assertFalse(any(line.strip() == "subagent: true" for line in frontmatter))
 
-    def test_skill_contains_required_delegation_and_safety_policy(self):
+    def test_skill_contains_read_only_registry_contract(self):
+        # The skill was de-attributed from the fan-out policy: it is now a
+        # read-only console over the plan registry. Pin that contract.
         content = SKILL_PATH.read_text(encoding="utf-8").lower()
         required_markers = (
-            "runs **inline in the main devin session**",
-            "at the start of every new session",
-            "never spawn for a trivial request",
-            "default to **1 active worker**",
-            "never exceed **3 concurrent workers**",
-            "do not spawn nested workers",
-            "subagent_explore",
-            "subagent_general",
-            "cpu-heavy tests",
-            "collect every delegated result",
-            ".sessions.json",
-            "resume its recorded devin session",
-            "never create another session",
-            "do not read or write any live devin session database",
-            "tests pass **and** the user explicitly requests",
-            "git add .",
-            "git add -a",
+            "read-only",
+            "plan registry",
+            "devin-orchestrator history",
+            "devin-orchestrator history --json",
+            "--registry",
+            "plans.jsonl",
+            "never starts fan-out",
             "devin-orchestrator plan",
-            "devin_inside_subagent",
+            "never records outcomes",
+            "devin-orchestrator record",
+            "does not dispatch or kill workers",
+            "human cli action",
+        )
+        for marker in required_markers:
+            with self.subTest(marker=marker):
+                self.assertIn(marker, content)
+
+    def test_rule_contains_fanout_delegation_and_safety_policy(self):
+        # The delegation/safety policy the skill used to carry now lives
+        # in the always-on rule; pin the markers there instead.
+        content = RULE_PATH.read_text(encoding="utf-8").lower()
+        required_markers = (
+            "run_subagent",
+            "is_background=true",
+            "máximo 3 workers concorrentes",
+            "sem aninhamento",
+            "coleta obrigatória",
+            "trivial inline",
             "devin_max_workers",
+            "devin_inside_subagent",
+            "devin-orchestrator plan",
+            "ação humana via cli",
         )
         for marker in required_markers:
             with self.subTest(marker=marker):
