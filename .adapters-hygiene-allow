@@ -1,0 +1,10 @@
+# Known-legitimate hits for scripts/check-adapters-hygiene.py —
+# one `path sha256=<hex>` line each; editing a pinned file re-triggers
+# the scan (same mechanism as .secrets-scan-allow).
+
+# The devin-office daemon serves its own documented loopback endpoint
+# (127.0.0.1:8788 / localhost:8788) — these descriptors and installer
+# reference the product's public bind, not an internal endpoint leak.
+packages/office/adapters/daemon/devin-office.task.xml sha256=a0ba6d75b0c5280c9dc8fa6b7c9f0603db0269fd03412ec8dffc3f6f6dd7d041
+packages/office/adapters/daemon/devin-office.service sha256=499e5cbb12b2ae3430aa7623805c2dc81f6e338cf0396a1a58a083a58cb44f44
+packages/office/adapters/daemon/install-task.ps1 sha256=2f96cae0cf1b2a39f62788fba7cf67f56e2165e5722748d3c76434b180eef0dd
