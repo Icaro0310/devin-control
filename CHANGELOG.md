@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **CI** — `ci.yml` calls the reusable `adapters-check` sensor (`devin-powerups` `@v1`): scans distributed adapter/skill files for personal paths, internal names, token shapes and SKILL.md command coherence.
 - **Docs** — corporate-Windows guides: Zscaler root export now covers both
   certificate stores (`certmgr.msc`/`certlm.msc`,
   `Cert:\CurrentUser\Root` + `Cert:\LocalMachine\Root`) and yields PEM
