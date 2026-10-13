@@ -5,11 +5,11 @@
 <a href="https://github.com/Icaro0310/devin-control/actions/workflows/test-office.yml"><img src="https://github.com/Icaro0310/devin-control/actions/workflows/test-office.yml/badge.svg" alt="tests"/></a>
 
 
-<a href="https://scorecard.dev/viewer/?uri=github.com/Icaro0310/devin-office"><img src="https://api.scorecard.dev/projects/github.com/Icaro0310/devin-office/badge" alt="OpenSSF Scorecard"/></a>
+<a href="https://scorecard.dev/viewer/?uri=github.com/Icaro0310/devin-control"><img src="https://api.scorecard.dev/projects/github.com/Icaro0310/devin-control/badge" alt="OpenSSF Scorecard"/></a>
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License: MIT"/></a>
 <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.10%2B-blue" alt="Python 3.10+"/></a>
-<a href="https://github.com/Icaro0310/devin-control"><img src="https://img.shields.io/github/stars/Icaro0310/devin-office" alt="GitHub stars"/></a>
-<a href="https://github.com/Icaro0310/devin-control/commits/main"><img src="https://img.shields.io/github/last-commit/Icaro0310/devin-office" alt="Last commit"/></a>
+<a href="https://github.com/Icaro0310/devin-control"><img src="https://img.shields.io/github/stars/Icaro0310/devin-control" alt="GitHub stars"/></a>
+<a href="https://github.com/Icaro0310/devin-control/commits/main"><img src="https://img.shields.io/github/last-commit/Icaro0310/devin-control" alt="Last commit"/></a>
 <a href="https://github.com/Icaro0310/awesome-devin"><img src="https://img.shields.io/badge/part%20of-devin--*-ecosystem-7c3aed" alt="devin-* ecosystem"/></a>
 <a href="https://github.com/Icaro0310/devin-control/issues"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen" alt="PRs welcome"/></a>
 </div>
@@ -92,21 +92,13 @@ on hosts without `/proc` (e.g. Windows).
 This read-only mode is the simplest way to try the dashboard. From a clone of
 this repository:
 
-**Windows (PowerShell):**
-
-```powershell
-git clone https://github.com/Icaro0310/devin-control.git
-cd devin-control/packages/office
-py -3 daemon.py --port 8788
-```
-
-**Linux:**
-
 ```bash
 git clone https://github.com/Icaro0310/devin-control.git
 cd devin-control/packages/office
-python3 daemon.py --port 8788
 ```
+
+Then start the daemon with the command for your OS — see the
+[Linux](README.linux.md) or [Windows](README.windows.md) guide.
 
 Open `http://localhost:8788`. Stop the server with `Ctrl+C`. It binds to
 loopback and does not write to Devin's databases.

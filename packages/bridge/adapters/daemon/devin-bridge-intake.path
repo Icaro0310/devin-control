@@ -1,0 +1,28 @@
+# devin-bridge inbox watcher — fires devin-bridge-intake.service the moment
+# a task file lands in <state-dir>/mailbox/inbox/.
+#
+# IMPORTANT: the watched directory must exist before this unit is enabled —
+# create it once (`mkdir -p ~/.local/state/devin-bridge/mailbox/inbox`) or
+# run `devin-bridge intake` once, which creates all mailbox stage dirs.
+# A path unit watching a missing directory never arms.
+
+[Unit]
+Description=Watch devin-bridge mailbox inbox for new task files
+Documentation=https://github.com/Icaro0310/devin-control/tree/main/packages/bridge
+
+[Path]
+# Watch the glob intake actually consumes, not directory emptiness:
+# DirectoryNotEmpty stays satisfied while ANY file sits in the inbox, so
+# a stray non-JSON file (an editor's .tmp, a README) would retrigger an
+# empty drain until the path unit hits its trigger limit and silently
+# stops watching. PathExistsGlob on *.json only fires for files
+# listInbox() will process — and every processed file leaves the inbox
+# (done/ or failed/), so the trigger self-clears.
+# Contract: producers must publish atomically — write to a different
+# name, then rename to <file>.json; a partial .json is untrusted input
+# and lands in failed/.
+PathExistsGlob=%h/.local/state/devin-bridge/mailbox/inbox/*.json
+Unit=devin-bridge-intake.service
+
+[Install]
+WantedBy=default.target

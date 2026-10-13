@@ -6,16 +6,23 @@
 - ``devin-switch use <profile>`` — DRY-RUN by default; ``--apply`` writes
 - ``devin-switch rollback`` — DRY-RUN by default; ``--apply`` restores the
   last journal backup
+- ``devin-switch export <profile> [--out FILE]`` — serialize a profile to
+  a portable JSON archive (stdout when ``--out`` is omitted)
+- ``devin-switch import <file> [--name NAME] [--force]`` — DRY-RUN by
+  default; ``--apply`` creates ``profiles/<name>/`` from a validated
+  archive
 - ``devin-switch doctor`` — config sanity + closest-profile ranking
 
 Exit codes: 0 on success / clean dry-run; 1 on any error (unknown profile,
-nothing to roll back, snapshot verification failure) or — for ``doctor``
-only — on any FAIL check. ``credentials.toml`` is never touched, ever.
+nothing to roll back, snapshot verification failure, invalid archive) or —
+for ``doctor`` only — on any FAIL check. ``credentials.toml`` is never
+touched, ever.
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -32,6 +39,14 @@ from devin_switch.plan import (
 )
 from devin_switch.profiles import ProfileError, discover, get
 from devin_switch.redact import is_credential_file, is_never_touch
+from devin_switch.transfer import (
+    TransferError,
+    build_archive,
+    parse_archive,
+    render_archive,
+    validate_profile_name,
+    write_archive_profile,
+)
 
 
 def _add_roots(p: argparse.ArgumentParser) -> None:
@@ -106,6 +121,43 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_roots(p_rb)
     _add_apply(p_rb)
+
+    p_exp = sub.add_parser(
+        "export",
+        help="serialize a profile to a portable JSON archive "
+        "(read-only; writes only the --out file)",
+    )
+    _add_roots(p_exp)
+    p_exp.add_argument("profile")
+    p_exp.add_argument(
+        "--out",
+        type=Path,
+        default=None,
+        metavar="FILE",
+        help="archive destination (default: stdout; '-' also means "
+        "stdout). An existing file is never overwritten.",
+    )
+
+    p_imp = sub.add_parser(
+        "import",
+        help="preview creating a profile from an archive (dry-run) or "
+        "create it with --apply",
+    )
+    _add_roots(p_imp)
+    _add_apply(p_imp)
+    p_imp.add_argument("file", type=Path, help="archive file to import")
+    p_imp.add_argument(
+        "--name",
+        default=None,
+        metavar="NAME",
+        help="profile name to create (default: the archive's own name)",
+    )
+    p_imp.add_argument(
+        "--force",
+        action="store_true",
+        help="replace an existing profile with the same name "
+        "(only with --apply)",
+    )
 
     p_doc = sub.add_parser(
         "doctor",
@@ -263,6 +315,115 @@ def cmd_rollback(roots: Roots, apply: bool) -> int:
     return 0
 
 
+def cmd_export(roots: Roots, name: str, out: Path | None) -> int:
+    profile = get(roots.profiles_dir, name)
+    result = build_archive(profile)
+    payload = render_archive(result.archive)
+    for rel in result.skipped:
+        print(f"note: {rel} skipped — never managed", file=sys.stderr)
+    if result.credential_files:
+        print(
+            "warning: archive contains credential-named files "
+            f"({', '.join(result.credential_files)}) — keep it private",
+            file=sys.stderr,
+        )
+    if out is None or str(out) == "-":
+        sys.stdout.write(payload)
+        return 0
+    out = out.expanduser()
+    if out.exists():
+        print(
+            f"error: {out} already exists — refusing to overwrite",
+            file=sys.stderr,
+        )
+        return 1
+    out.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        # O_EXCL makes "no overwrite" atomic with the create (the exists()
+        # check above alone would race); mode 0o600 because the archive
+        # can carry credential-named files.
+        fd = os.open(out, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        print(
+            f"error: {out} already exists — refusing to overwrite",
+            file=sys.stderr,
+        )
+        return 1
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(payload)
+    print(
+        f"exported profile '{name}' — {result.file_count} file(s) -> {out}"
+    )
+    return 0
+
+
+def cmd_import(
+    roots: Roots, file: Path, name: str | None, force: bool, apply: bool
+) -> int:
+    try:
+        text = file.expanduser().read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        print(f"error: cannot read {file}: {exc}", file=sys.stderr)
+        return 1
+    archive = parse_archive(text)  # raises TransferError — nothing written
+    if name is not None:
+        target_name = validate_profile_name(name)
+    else:
+        # The archive's own name may not be a valid profile name (an
+        # exported profile can live under a non-portable dirname) —
+        # --name is the escape hatch.
+        try:
+            target_name = validate_profile_name(archive.name)
+        except TransferError as exc:
+            raise TransferError(
+                f"{exc} — pass --name to import it under a valid "
+                "profile name"
+            ) from exc
+    target = roots.profiles_dir / target_name
+    collides = target.exists()
+    n = len(archive.files)
+    noun = "file" if n == 1 else "files"
+    if not apply:
+        print(
+            f"DRY-RUN import — would create profile '{target_name}' "
+            f"({n} {noun}):"
+        )
+        for f in archive.files:
+            print(f"  {f.rel}  [{len(f.data)} B]")
+        if archive.description:
+            print(f"  profile.json description: {archive.description}")
+        if collides:
+            print(
+                f"warning: profile '{target_name}' already exists — "
+                "--apply would fail without --force"
+            )
+        print()
+        print("re-run with --apply to create the profile")
+        return 0
+    if (
+        roots.profiles_dir.resolve()
+        == paths_mod.bundled_profiles_dir()
+    ):
+        print(
+            "error: refusing to import into the bundled example profiles "
+            "— pass --profiles-dir or set DEVIN_SWITCH_PROFILES_DIR",
+            file=sys.stderr,
+        )
+        return 1
+    written = write_archive_profile(
+        archive, roots.profiles_dir, target_name, force, roots
+    )
+    verb = "replaced" if collides else "created"
+    print(
+        f"imported profile '{target_name}' — {verb} {target} "
+        f"({len(written)} file(s)):"
+    )
+    for rel in written:
+        print(f"  wrote {rel}")
+    print(f"journal: {roots.journal_path}")
+    return 0
+
+
 def cmd_doctor(roots: Roots) -> int:
     results = check_config_files(roots)
     worst = 0
@@ -308,9 +469,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             return cmd_use(roots, args.profile, args.apply)
         if args.command == "rollback":
             return cmd_rollback(roots, args.apply)
+        if args.command == "export":
+            return cmd_export(roots, args.profile, args.out)
+        if args.command == "import":
+            return cmd_import(
+                roots, args.file, args.name, args.force, args.apply
+            )
         if args.command == "doctor":
             return cmd_doctor(roots)
-    except ProfileError as exc:
+    except (ProfileError, TransferError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     return 2

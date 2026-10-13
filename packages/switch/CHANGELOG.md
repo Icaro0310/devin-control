@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Daemon adapters for the drift check (`adapters/daemon/`):
+  `devin-switch-drift.{service,timer}` user-level systemd units (daily
+  `devin-switch doctor` with `Persistent=true` catch-up, notification
+  only) and a Windows `task.xml` + `install-task.ps1`/`remove-task.ps1`
+  pair (logon + daily, `StartWhenAvailable`; the doctor report appends
+  to `%LOCALAPPDATA%\devin-switch\drift.log` so it survives the task's
+  discarded console output). `verify.sh` +
+  `tests/test_daemon_adapter.py` cover the artifacts.
+
 ### Changed
 
 - README gains the generated `Part of the DEVIN ecosystem` block
@@ -24,6 +35,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Devin skill and `adapters/` plugin root. Profile descriptions pass
   through `mask_line` before reaching the MCP client, so a secret in
   `profile.json` free text is never exposed raw.
+- `devin-switch export <profile> [--out FILE]` — serializes a profile to
+  a portable JSON archive (`devin-switch/profile-archive`, schema
+  version 1: per-file base64 bytes + sha256, `profile.json` metadata as
+  fields). Writes to stdout by default; `--out` never overwrites an
+  existing file. `credentials.toml` is excluded without being read;
+  credential-named files trigger a stderr warning.
+- `devin-switch import <file> [--name NAME] [--force]` — dry-run by
+  default; `--apply` validates the archive fail-closed (format and
+  schema version, JSON shape, base64, per-file sha256, managed-path
+  rules — no `..`/absolute/backslash traversal) and materializes
+  `profiles/<name>/` through a staging dir + rename. Refuses to replace
+  an existing profile without `--force`; appends an `import` journal
+  entry.
 
 - `profiles/lab/` — G3 A/B evaluation overlay: pinned model
   (`SWE-2-High` — the free-tier model as of 2026-10-04),

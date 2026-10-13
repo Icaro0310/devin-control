@@ -125,15 +125,17 @@ def write_profile(
     for rel, text in files.items():
         dest = pdir / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text(text, encoding="utf-8")
+        # bytes, not write_text: archive round-trips are byte-exact, so the
+        # fixture must not let the platform translate \n -> \r\n on Windows
+        dest.write_bytes(text.encode("utf-8"))
     meta: dict[str, object] = {}
     if description:
         meta["description"] = description
     if notes:
         meta["notes"] = notes
     if meta:
-        (pdir / "profile.json").write_text(
-            json.dumps(meta), encoding="utf-8"
+        (pdir / "profile.json").write_bytes(
+            json.dumps(meta).encode("utf-8")
         )
     return pdir
 
@@ -145,15 +147,15 @@ def roots(tmp_path: Path) -> Roots:
     config = tmp_path / "config"
     data.mkdir()
     (config / "User").mkdir(parents=True)
-    (data / "config.json").write_text(
-        json.dumps(BASE_CONFIG, indent=2), encoding="utf-8"
+    (data / "config.json").write_bytes(
+        json.dumps(BASE_CONFIG, indent=2).encode("utf-8")
     )
-    (data / "mcp_config.json").write_text(
-        json.dumps(BASE_MCP, indent=2), encoding="utf-8"
+    (data / "mcp_config.json").write_bytes(
+        json.dumps(BASE_MCP, indent=2).encode("utf-8")
     )
-    (data / "credentials.toml").write_text(CREDENTIALS, encoding="utf-8")
-    (config / "User" / "settings.json").write_text(
-        json.dumps(BASE_SETTINGS, indent=2), encoding="utf-8"
+    (data / "credentials.toml").write_bytes(CREDENTIALS.encode("utf-8"))
+    (config / "User" / "settings.json").write_bytes(
+        json.dumps(BASE_SETTINGS, indent=2).encode("utf-8")
     )
 
     profiles = tmp_path / "profiles"

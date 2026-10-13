@@ -10,7 +10,7 @@ from pathlib import Path
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parent
-CHARS = ROOT / "assets" / "chars"
+CHARS = ROOT.parent / "assets" / "chars"
 CHARS.mkdir(parents=True, exist_ok=True)
 FW, FH, COLS, ROWS = 16, 32, 7, 3
 SKIN = (228, 178, 138)

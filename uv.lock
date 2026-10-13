@@ -285,6 +285,7 @@ source = { editable = "packages/switch" }
 
 [package.optional-dependencies]
 dev = [
+    { name = "mcp" },
     { name = "pytest" },
 ]
 mcp = [
@@ -293,6 +294,7 @@ mcp = [
 
 [package.metadata]
 requires-dist = [
+    { name = "mcp", marker = "extra == 'dev'", specifier = ">=1.2" },
     { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.2" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
 ]

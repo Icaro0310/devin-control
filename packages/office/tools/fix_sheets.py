@@ -15,7 +15,7 @@ from scipy import ndimage
 
 ROOT = Path(__file__).resolve().parent
 SRC = ROOT / "ai-src" / "rpgmaker"
-OUT = ROOT / "assets" / "chars"
+OUT = ROOT.parent / "assets" / "chars"
 FW = FH = 48
 GROUND_H = 44
 ALPHA_MIN = 96

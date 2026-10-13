@@ -7,7 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Daemon adapters for the dashboard (`adapters/daemon/`):
+  `devin-office.service`, a user-level systemd unit keeping the resident
+  `daemon.py` server up (`Restart=on-failure`, loopback-confined,
+  `ReadWritePaths` covering `session_locks` for the flock probe and the
+  checkout for `kanban.json`), and a Windows `task.xml` +
+  `install-task.ps1`/`remove-task.ps1` pair (at-logon, no execution-time
+  cap; the installer resolves and XML-escapes the checkout path into the
+  action). `verify.sh` + `tests/test_daemon_adapter.py` cover the
+  artifacts.
+
 ### Changed
+
+- Docs: job agendado usa wrapper `.cmd` em `%USERPROFILE%\devin-tasks` + `Register-ScheduledTask -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"`; o wrapper antecede `%USERPROFILE%\.local\bin` ao `PATH` e o registro usa `-Force`.
 
 - README gains the generated `Part of the DEVIN ecosystem` block
   (track/nature/audience/interface rendered from the registry).
@@ -40,6 +54,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Scheduled PM2 jobs (`cron_restart`, idle between runs) no longer render
   as down — they show a ⏰ marker and count as healthy.
+
+- README quick-start path corrected after the monorepo absorption, and the
+  per-OS launch commands moved out of the shared guide — they live in
+  `README.linux.md` / `README.windows.md` per the platform-docs rule.
 
 ## [0.1.0] - 2026-10-03
 

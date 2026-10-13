@@ -64,7 +64,8 @@ jobs:
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create "${{ github.ref_name }}" "$PKG_DIR"/dist/* sbom.cdx.json* --verify-tag --generate-notes
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: gh release create "$RELEASE_TAG" "$PKG_DIR"/dist/* sbom.cdx.json* --verify-tag --generate-notes
 
   release-bridge:
     if: startsWith(github.ref_name, 'bridge-v')
@@ -73,4 +74,5 @@ jobs:
       - name: Publish GitHub Release (triggers publish-bridge-* workflows)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create "${{ github.ref_name }}" --verify-tag --generate-notes
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: gh release create "$RELEASE_TAG" --verify-tag --generate-notes

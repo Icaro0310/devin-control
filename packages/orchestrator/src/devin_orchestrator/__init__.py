@@ -10,4 +10,4 @@ task decomposition — with the model.
 from devin_orchestrator.planner import MAX_WORKERS, WorkerPlan, plan_task
 
 __all__ = ["MAX_WORKERS", "WorkerPlan", "plan_task"]
-__version__ = "0.1.0"
+__version__ = "0.2.0"

@@ -16,7 +16,7 @@ from PIL import Image
 
 ROOT = Path(__file__).resolve().parent
 SRC = ROOT / "ai-src" / "rpgmaker"
-OUT = ROOT / "assets" / "chars"
+OUT = ROOT.parent / "assets" / "chars"
 FW = FH = 48
 
 RACES = {

@@ -2,11 +2,11 @@
 
 <a href="https://github.com/Icaro0310/devin-control/actions/workflows/test-switch.yml"><img src="https://github.com/Icaro0310/devin-control/actions/workflows/test-switch.yml/badge.svg" alt="ci"/></a>
 
-<a href="https://scorecard.dev/viewer/?uri=github.com/Icaro0310/devin-switch"><img src="https://api.scorecard.dev/projects/github.com/Icaro0310/devin-switch/badge" alt="OpenSSF Scorecard"/></a>
+<a href="https://scorecard.dev/viewer/?uri=github.com/Icaro0310/devin-control"><img src="https://api.scorecard.dev/projects/github.com/Icaro0310/devin-control/badge" alt="OpenSSF Scorecard"/></a>
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License: MIT"/></a>
 <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.10%2B-blue" alt="Python 3.10+"/></a>
-<a href="https://github.com/Icaro0310/devin-control"><img src="https://img.shields.io/github/stars/Icaro0310/devin-switch" alt="GitHub stars"/></a>
-<a href="https://github.com/Icaro0310/devin-control/commits/main"><img src="https://img.shields.io/github/last-commit/Icaro0310/devin-switch" alt="Last commit"/></a>
+<a href="https://github.com/Icaro0310/devin-control"><img src="https://img.shields.io/github/stars/Icaro0310/devin-control" alt="GitHub stars"/></a>
+<a href="https://github.com/Icaro0310/devin-control/commits/main"><img src="https://img.shields.io/github/last-commit/Icaro0310/devin-control" alt="Last commit"/></a>
 <a href="https://github.com/Icaro0310/awesome-devin"><img src="https://img.shields.io/badge/part%20of-devin--*-ecosystem-7c3aed" alt="devin-* ecosystem"/></a>
 <a href="https://github.com/Icaro0310/devin-control/issues"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen" alt="PRs welcome"/></a>
 </div>
@@ -63,6 +63,9 @@ does the swap safely.
   printable files, values under sensitive key names (`token`, `secret`,
   `password`, `api_key`, `auth`…) or that look like tokens (long alnum
   blobs, JWTs, `sk-`/`ghp_`/`xox` prefixes) render as `<redacted>`.
+- **Fail-closed imports** — profile archives are validated end to end
+  (schema, per-file sha256, path safety) before anything is written;
+  `import` never overwrites an existing profile without `--force`.
 - **No network** — stdlib only, Python ≥ 3.10.
 
 ## Install
@@ -79,6 +82,11 @@ devin-switch use personal               # DRY-RUN: masked per-file plan
 devin-switch use personal --apply       # snapshot → verify → write → journal
 devin-switch rollback                   # DRY-RUN: what would be restored
 devin-switch rollback --apply           # restore the last verified backup
+devin-switch export personal            # portable JSON archive to stdout
+devin-switch export personal --out personal.json
+devin-switch import personal.json       # DRY-RUN: validate + preview only
+devin-switch import personal.json --apply            # create profiles/personal/
+devin-switch import personal.json --apply --name copy --force
 devin-switch doctor                     # config sanity + closest profile
 ```
 
@@ -110,6 +118,26 @@ profiles/
 Overlays are **whole-file replacements**, not merges — what the profile
 ships is what the file becomes. Files are JSONC: `//` and `/* */`
 comments allowed, trailing commas not.
+
+### Exporting and importing profiles
+
+`export` serializes a profile to a single portable JSON document
+(`format: "devin-switch/profile-archive"`, `schema_version: 1`): each
+managed file as `{path, sha256, data}` with base64 bytes, plus the
+`profile.json` metadata as fields. With no `--out` it goes to stdout;
+`--out` writes a file but never overwrites an existing one.
+`credentials.toml` is excluded without being read — archives carry
+secrets in the clear, so keep them private.
+
+`import` is dry-run by default like `use`: it validates the archive and
+previews the profile that would be created. `--apply` materializes
+`profiles/<name>/` (name from the archive or `--name`) via a staging dir
++ rename, and journals an `import` entry. Validation is **fail-closed**:
+unknown `format`/`schema_version`, bad base64, sha256 mismatch,
+duplicate paths, `..`/absolute/backslash/hidden/`__pycache__` path
+parts, `profile.json` or `credentials.toml` entries are all rejected
+before a single byte is written — archive paths can never escape the
+profiles dir. An existing profile is never replaced without `--force`.
 
 ### The `lab` profile (G3 A/B runs)
 
@@ -148,7 +176,7 @@ switch forward again afterwards.
 ## Development
 
 ```bash
-python -m pytest            # 62 tests, all on synthetic tmp-dir fixtures
+python -m pytest            # 89 tests, all on synthetic tmp-dir fixtures
 python -m devin_switch.cli doctor --profiles-dir profiles
 ```
 

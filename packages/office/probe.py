@@ -2,7 +2,8 @@
 """office-probe — probe magro do devin-office, corre na máquina local.
 
 Recolhe o WorldState (sessions.db, jev_log.db, heartbeat) e faz POST para
-o hub na VM apenas quando o estado muda. Pensado para ~20 MB de RAM.
+o hub na VM quando o estado muda, mais keepalive a cada KEEPALIVE s para o
+hub medir lastIngestAgoS como sinal de vida. Pensado para ~20 MB de RAM.
 
 Também faz a ponte de comandos (control path):
   GET  /api/cmd/pending   → escreve office/cmd_inbox/<id>.json p/ executor.py
@@ -46,6 +47,7 @@ HUBS = [
                    ).split(",") if h.strip()
 ]
 INTERVAL = float(os.environ.get("OFFICE_INTERVAL", "3"))
+KEEPALIVE = float(os.environ.get("OFFICE_KEEPALIVE", "60"))
 TOKEN = os.environ.get("OFFICE_TOKEN", "")
 CONTROL_ENABLED = os.environ.get("OFFICE_CONTROL_ENABLED", "").lower() in {
     "1", "true", "yes", "on"
@@ -157,6 +159,7 @@ def poll_commands(acked: dict, last_ensure: list) -> None:
 
 def main() -> None:
     last_hash = {h: "" for h in HUBS}
+    last_push = {h: 0.0 for h in HUBS}
     failures = 0
     acked = {}
     last_ensure = [0.0]
@@ -169,13 +172,17 @@ def main() -> None:
             state = collect_state()
             blob = json.dumps(state, sort_keys=True)
             h = hashlib.sha1(blob.encode()).hexdigest()
+            now = time.time()
             sent = 0
             for hub in HUBS:
-                if h == last_hash[hub]:
+                # skip só se o keepalive estiver dentro do prazo — força um
+                # POST ≥1x/KEEPALIVE mesmo sem mudança (lastIngestAgoS do hub)
+                if h == last_hash[hub] and now - last_push[hub] < KEEPALIVE:
                     sent += 1
                     continue
                 if push(hub, state):
                     last_hash[hub] = h
+                    last_push[hub] = now
                     sent += 1
             if sent:
                 failures = 0

@@ -1,0 +1,20 @@
+# devin-bridge intake polling fallback.
+#
+# The .path unit is the fast path (instant trigger on new inbox files).
+# This timer covers what inotify cannot: tasks dropped while systemd was
+# not running the path unit, filesystems with unreliable notification,
+# and machines that sleep through events. It simply re-runs the same
+# `devin-bridge intake` — an empty inbox is a cheap no-op.
+
+[Unit]
+Description=Periodic devin-bridge mailbox intake (polling fallback)
+Documentation=https://github.com/Icaro0310/devin-control/tree/main/packages/bridge
+
+[Timer]
+# First drain shortly after login, then re-arm after every service run.
+OnBootSec=2min
+OnUnitInactiveSec=2min
+Unit=devin-bridge-intake.service
+
+[Install]
+WantedBy=timers.target

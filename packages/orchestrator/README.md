@@ -6,11 +6,11 @@
 <a href="https://pypi.org/project/devin-fanout/"><img src="https://img.shields.io/pypi/v/devin-fanout" alt="PyPI: devin-fanout"/></a>
 
 
-<a href="https://scorecard.dev/viewer/?uri=github.com/Icaro0310/devin-orchestrator"><img src="https://api.scorecard.dev/projects/github.com/Icaro0310/devin-orchestrator/badge" alt="OpenSSF Scorecard"/></a>
+<a href="https://scorecard.dev/viewer/?uri=github.com/Icaro0310/devin-control"><img src="https://api.scorecard.dev/projects/github.com/Icaro0310/devin-control/badge" alt="OpenSSF Scorecard"/></a>
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License: MIT"/></a>
 <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.10%2B-blue" alt="Python 3.10+"/></a>
-<a href="https://github.com/Icaro0310/devin-control"><img src="https://img.shields.io/github/stars/Icaro0310/devin-orchestrator" alt="GitHub stars"/></a>
-<a href="https://github.com/Icaro0310/devin-control/commits/main"><img src="https://img.shields.io/github/last-commit/Icaro0310/devin-orchestrator" alt="Last commit"/></a>
+<a href="https://github.com/Icaro0310/devin-control"><img src="https://img.shields.io/github/stars/Icaro0310/devin-control" alt="GitHub stars"/></a>
+<a href="https://github.com/Icaro0310/devin-control/commits/main"><img src="https://img.shields.io/github/last-commit/Icaro0310/devin-control" alt="Last commit"/></a>
 <a href="https://github.com/Icaro0310/awesome-devin"><img src="https://img.shields.io/badge/part%20of-devin--*-ecosystem-7c3aed" alt="devin-* ecosystem"/></a>
 <a href="https://github.com/Icaro0310/devin-control/issues"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen" alt="PRs welcome"/></a>
 </div>
@@ -78,6 +78,23 @@ execute.
 devin-orchestrator plan '<spec>' --explain   # human-readable decision walkthrough
 devin-orchestrator schema spec|plan          # print the published JSON Schemas
 ```
+
+### `--cost-estimate`
+
+```bash
+devin-orchestrator plan '<spec>' --cost-estimate
+```
+
+Adds a `cost_estimate` block to the plan JSON (or a section to `--explain`
+output): a per-unit duration estimate and the sequential vs. fan-out
+critical path under the planned worker model. It is a **planning label in
+minutes, not billing** — the CLI has no pricing or quota data. Durations
+come from `units_detail[].est_minutes`, then the spec-level
+`est_unit_minutes`, then a per-scope default (trivial=5, small=15,
+medium=30, large=60 min); fan-out is a greedy longest-first schedule
+across the planned worker lanes and excludes spawn/collect/verification
+overhead. `estimated_sessions` counts one coordinator plus one session
+per planned worker. Estimating never executes anything.
 
 A spec may declare per-unit files so the planner can flag units that are
 **not** disjoint before workers are launched:
@@ -167,6 +184,26 @@ The rule is always-on; the skill is model-triggered.
 `record`/`history` (OR-3) keep a **local** log of plans vs. outcomes in
 `plans.jsonl` — plan hash, worker count, mode, outcome, notes. It is a
 registry, not telemetry: nothing leaves the machine.
+
+Every `record` call also emits a per-run `metrics.json` — always, with no
+opt-out — under `metrics/<run_id>.json` beside `plans.jsonl` (same
+`.devin-ecosystem` family; `metrics/` sits next to `--registry`'s file):
+
+```bash
+devin-orchestrator record '<plan>' --outcome success \
+    --run-id api-ui-2026-10-11 --session-id <devin-session> \
+    --duration 612 --started 1791759000 \
+    --units '[{"id":"api","status":"success","duration_s":300},
+              {"id":"ui","status":"failed","duration_s":312}]'
+```
+
+The file carries the run/session id, `recorded_ts`/`started_ts`/`ended_ts`
+timestamps, total `duration_s`, planned worker count, the recorded
+outcome, per-unit `status`/`duration_s` detail, and an `outcome_counts`
+roll-up (unit statuses when supplied, else the run's own outcome). It is
+read-only observability: a metrics write failure warns on stderr but
+never breaks the record itself. `--run-id` defaults to
+`run-<ts>-<plan_hash>`; ids are slug-sanitised before becoming filenames.
 
 ## Limitations
 

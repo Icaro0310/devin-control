@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Windows Scheduled Task: devin-bridge mailbox intake.
+
+  Trigger: at logon, then repeats every 5 minutes. A logon+repeat trigger
+  survives suspend/hibernate better than a fixed clock time (a fixed-time
+  task only catches up if StartWhenAvailable fires, and machines that sleep
+  through the slot drift silently).
+
+  Action: `devin-bridge intake` via cmd.exe so the npm global shim on PATH
+  resolves. For unattended runs append the auto-approve flag documented
+  in README.windows.md — understand your policy.json first.
+
+  Import with install-task.ps1 (user scope, no admin) or:
+    schtasks /create /tn "devin-bridge-intake" /xml devin-bridge-intake.task.xml
+-->
+<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Description>Drain the devin-bridge mailbox inbox (task files in %LOCALAPPDATA%\devin-bridge\mailbox\inbox). One-shot drain per run; the bridge has no listener by design.</Description>
+    <URI>\devin-bridge-intake</URI>
+  </RegistrationInfo>
+  <Triggers>
+    <LogonTrigger>
+      <Enabled>true</Enabled>
+      <Repetition>
+        <Interval>PT5M</Interval>
+        <StopAtDurationEnd>false</StopAtDurationEnd>
+      </Repetition>
+    </LogonTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author">
+      <!-- Runs as the importing user, only while logged on — no admin. -->
+      <LogonType>InteractiveToken</LogonType>
+      <RunLevel>LeastPrivilege</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>true</AllowHardTerminate>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+    <AllowStartOnDemand>true</AllowStartOnDemand>
+    <Enabled>true</Enabled>
+    <Hidden>false</Hidden>
+    <ExecutionTimeLimit>PT1H</ExecutionTimeLimit>
+    <Priority>7</Priority>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>cmd.exe</Command>
+      <Arguments>/c devin-bridge intake</Arguments>
+    </Exec>
+  </Actions>
+</Task>

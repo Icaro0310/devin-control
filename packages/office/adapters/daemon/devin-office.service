@@ -1,0 +1,51 @@
+# devin-office dashboard — systemd user service.
+#
+# Unlike the oneshot units elsewhere in this ecosystem, devin-office IS a
+# resident process: daemon.py serves the pixel-office dashboard plus
+# /api/state on 127.0.0.1:8788, polling Devin's local stores read-only.
+# This unit just keeps that existing process alive — one logic, many
+# faces: the unit only calls `python3 daemon.py`.
+#
+# Enable devin-office.service directly (there is no timer — the dashboard
+# should be up whenever you are logged in).
+
+[Unit]
+Description=devin-office dashboard daemon (127.0.0.1:8788, read-only)
+Documentation=https://github.com/Icaro0310/devin-control/tree/main/packages/office
+# Reads sessions.db — order after the session is up.
+After=default.target
+
+[Service]
+Type=simple
+# daemon.py lives in the package checkout (there is no installed CLI).
+# Adjust the path to where YOUR devin-control checkout lives; daemon.py
+# resolves every sibling file (index.html, sessmon.py, ...) relative to
+# itself, so the working directory does not matter.
+ExecStart=/usr/bin/python3 %h/devin/devin-ecosystem/devin-control/packages/office/daemon.py --port 8788
+Restart=on-failure
+RestartSec=5
+
+# Hardening: the dashboard only READS Devin's stores (sqlite opened
+# mode=ro) and only ever talks to loopback — it binds 127.0.0.1 and its
+# eco probes hit 127.0.0.1 health endpoints. Writes stay confined to two
+# paths: (1) session_locks — probed with an exclusive O_RDWR flock to
+# detect live sessions (a read-only open would fail EBADF and every
+# session would report a false "held" lock); (2) the checkout itself —
+# POST /api/kanban persists closed-state to kanban.json beside daemon.py
+# via an atomic .tmp+rename, so the package dir MUST be writable or the
+# kanban API returns 400. Keep the second entry in sync with ExecStart
+# if you move the checkout.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.local/share/devin/cli/session_locks %h/devin/devin-ecosystem/devin-control/packages/office
+# Loopback only: serving the dashboard needs AF_INET/AF_INET6; the eco
+# probes only reach 127.0.0.1. If you set OFFICE_ECO_URL to a non-local
+# collector, drop the IPAddressDeny line.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+IPAddressAllow=localhost
+IPAddressDeny=any
+
+[Install]
+WantedBy=default.target

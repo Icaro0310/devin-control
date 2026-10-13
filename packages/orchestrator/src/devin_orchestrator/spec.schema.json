@@ -30,6 +30,11 @@
       "type": "string",
       "maxLength": 200
     },
+    "est_unit_minutes": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "description": "Optional default duration per unit, in minutes. Feeds --cost-estimate only; it is a planning label, not billing."
+    },
     "units_detail": {
       "type": "array",
       "description": "Optional per-unit file declarations used by the disjointness check (OR-4). Paths are declared, never read.",
@@ -41,6 +46,11 @@
           "files": {
             "type": "array",
             "items": {"type": "string", "minLength": 1}
+          },
+          "est_minutes": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "description": "Optional per-unit duration estimate in minutes for --cost-estimate."
           }
         },
         "additionalProperties": false
