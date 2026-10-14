@@ -69,10 +69,15 @@ const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
 
+// PATHEXT on Windows never matches a bare extensionless file — fixtures
+// carry the real executable suffix (".EXE", matching PATHEXT's case so
+// resolved paths string-compare equal).
+const EXE = process.platform === "win32" ? ".EXE" : "";
+
 // spawnSpec resolves for real now — plant a fake devin-bridge on PATH so
 // the spawned calls below have a target to resolve to.
 const pathBin = fs.mkdtempSync(path.join(os.tmpdir(), "bridge-path-"));
-fs.writeFileSync(path.join(pathBin, "devin-bridge"), "#!/bin/sh\n", { mode: 0o755 });
+fs.writeFileSync(path.join(pathBin, "devin-bridge" + EXE), "#!/bin/sh\n", { mode: 0o755 });
 process.env.PATH = `${pathBin}${path.delimiter}${process.env.PATH}`;
 
 ext.activate({ subscriptions: [] });
@@ -149,7 +154,7 @@ const withWorkspace = (ws, trusted, fn) => {
 
 test("untrusted workspace skips a repo-planted executable", () => {
   const ws = fs.mkdtempSync(path.join(os.tmpdir(), "bridge-ws-"));
-  const planted = path.join(ws, "devin-bridge");
+  const planted = path.join(ws, "devin-bridge" + EXE);
   fs.writeFileSync(planted, "#!/bin/sh\n", { mode: 0o755 });
   try {
     const spec = withWorkspace(ws, false,
@@ -162,7 +167,7 @@ test("untrusted workspace skips a repo-planted executable", () => {
 
 test("trusted workspace allows a repo-local executable", () => {
   const ws = fs.mkdtempSync(path.join(os.tmpdir(), "bridge-ws-"));
-  const planted = path.join(ws, "devin-bridge");
+  const planted = path.join(ws, "devin-bridge" + EXE);
   fs.writeFileSync(planted, "#!/bin/sh\n", { mode: 0o755 });
   try {
     const spec = withWorkspace(ws, true,

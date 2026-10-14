@@ -5,6 +5,11 @@ import path from "node:path";
 import test from "node:test";
 import { credentialsPath, devinBin, devinBinCandidates } from "../src/acp-client.js";
 
+// PATHEXT on Windows never matches a bare extensionless file — fixtures
+// carry the real executable suffix (".EXE", matching PATHEXT's case so
+// spec.file string-compares equal).
+const EXE = process.platform === "win32" ? ".EXE" : "";
+
 
 test("Linux credentials follow XDG_DATA_HOME", () => {
   assert.equal(
@@ -39,9 +44,9 @@ test("explicit credentials path overrides platform defaults", () => {
   );
 });
 
-test("Linux CLI is resolved from PATH", () => {
+test("CLI is resolved from PATH", () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "devin-bin-"));
-  const executable = path.join(directory, "devin");
+  const executable = path.join(directory, "devin" + EXE);
   fs.writeFileSync(executable, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
   // Resolution goes through safe-executable, which walks the real
   // process PATH — inject it instead of a candidate-env override.
@@ -63,22 +68,22 @@ test("autodetect skips a workspace-planted binary for the user's", () => {
   const ws = fs.mkdtempSync(path.join(os.tmpdir(), "devin-ws-"));
   const realDir = fs.mkdtempSync(path.join(os.tmpdir(), "devin-real-"));
   for (const dir of [ws, realDir]) {
-    fs.writeFileSync(path.join(dir, "devin"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+    fs.writeFileSync(path.join(dir, "devin" + EXE), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
   }
   const oldPath = process.env.PATH;
   process.env.PATH = `${ws}${path.delimiter}${realDir}`; // ws wins PATH order
   try {
     const spec = devinBin({ platform: "linux", env: {}, workspaceDir: ws });
-    assert.equal(spec && spec.file, path.join(realDir, "devin"));
+    assert.equal(spec && spec.file, path.join(realDir, "devin" + EXE));
   } finally { process.env.PATH = oldPath; }
 });
 
 test("a DEVIN_CLI_PATH inside the workspace is refused", () => {
   const ws = fs.mkdtempSync(path.join(os.tmpdir(), "devin-ws-"));
-  const planted = path.join(ws, "devin");
+  const planted = path.join(ws, "devin" + EXE);
   const realDir = fs.mkdtempSync(path.join(os.tmpdir(), "devin-real-"));
   fs.writeFileSync(planted, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
-  fs.writeFileSync(path.join(realDir, "devin"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+  fs.writeFileSync(path.join(realDir, "devin" + EXE), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
   const oldPath = process.env.PATH;
   process.env.PATH = realDir;
   try {
@@ -87,7 +92,7 @@ test("a DEVIN_CLI_PATH inside the workspace is refused", () => {
       env: { DEVIN_CLI_PATH: planted },
       workspaceDir: ws,
     });
-    assert.equal(spec && spec.file, path.join(realDir, "devin"));
+    assert.equal(spec && spec.file, path.join(realDir, "devin" + EXE));
   } finally { process.env.PATH = oldPath; }
 });
 
