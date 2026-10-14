@@ -34,7 +34,7 @@
         "devinBridge.executable",
         "devinBridge.checkOnStartup"
       ],
-      "description": "Runs the user-installed devin-bridge CLI on demand (the CLI may spawn the user-installed agent binary with the repo as cwd). In Restricted Mode the workspace-configured executable and checkOnStartup are ignored."
+      "description": "Runs the user-installed devin-bridge CLI on demand (the CLI may spawn the user-installed agent binary with the repo as cwd). In Restricted Mode the workspace-configured executable is ignored and checkOnStartup never auto-runs the CLI."
     }
   },
   "contributes": {

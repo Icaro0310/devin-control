@@ -194,7 +194,8 @@ function activate(context) {
   };
   context.subscriptions.push(statusBar,
     ...Object.entries(cmds).map(([id, fn]) => vscode.commands.registerCommand(id, fn)));
-  if (vscode.workspace.getConfiguration("devinBridge").get("checkOnStartup", false)) sessions();
+  if (vscode.workspace.isTrusted &&
+      vscode.workspace.getConfiguration("devinBridge").get("checkOnStartup", false)) sessions();
 }
 
 function deactivate() {}

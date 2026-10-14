@@ -35,6 +35,7 @@ const vscodeStub = {
     showTextDocument: () => Promise.resolve({ edit: async () => true }),
   },
   workspace: {
+    isTrusted: true,
     getConfiguration: () => ({ get: (k, d) => (k in settings ? settings[k] : d) }),
     workspaceFolders: [{ uri: { fsPath: "/repo" } }],
     openTextDocument: () => Promise.resolve({}),
@@ -228,5 +229,32 @@ test("a failed call renders unavailable without leaving a stale color", async ()
   assert.strictEqual(out, null);
   assert.match(statusBarStub.text, /unavailable/);
   assert.strictEqual(statusBarStub.backgroundColor, undefined);
+  assertCallsReadOnly();
+});
+
+test("manifest declares limited untrusted-workspace support", () => {
+  const manifest = JSON.parse(
+    fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8"),
+  );
+  const uw = manifest.capabilities.untrustedWorkspaces;
+  assert.strictEqual(uw.supported, "limited");
+  assert.deepStrictEqual(uw.restrictedConfigurations.sort(), [
+    "devinBridge.checkOnStartup",
+    "devinBridge.executable",
+  ]);
+});
+
+test("checkOnStartup never spawns in an untrusted workspace", () => {
+  const context = { subscriptions: [] };
+  settings = { checkOnStartup: true };
+  vscodeStub.workspace.isTrusted = false;
+  calls.length = 0;
+  ext.activate(context);
+  assert.strictEqual(calls.length, 0);
+  vscodeStub.workspace.isTrusted = true;
+  ext.activate(context);
+  assert.strictEqual(calls.length, 1);
+  assert.deepStrictEqual(calls[0].args, ["sessions", "--json"]);
+  settings = {};
   assertCallsReadOnly();
 });
