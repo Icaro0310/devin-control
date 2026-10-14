@@ -35,6 +35,7 @@ const vscodeStub = {
     showTextDocument: () => Promise.resolve({ edit: async () => true }),
   },
   workspace: {
+    isTrusted: true,
     getConfiguration: () => ({ get: (k, d) => (k in settings ? settings[k] : d) }),
     workspaceFolders: [{ uri: { fsPath: "/repo" } }],
     openTextDocument: () => Promise.resolve({}),
@@ -67,6 +68,17 @@ const assert = require("node:assert");
 const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
+
+// PATHEXT on Windows never matches a bare extensionless file — fixtures
+// carry the real executable suffix (".EXE", matching PATHEXT's case so
+// resolved paths string-compare equal).
+const EXE = process.platform === "win32" ? ".EXE" : "";
+
+// spawnSpec resolves for real now — plant a fake devin-bridge on PATH so
+// the spawned calls below have a target to resolve to.
+const pathBin = fs.mkdtempSync(path.join(os.tmpdir(), "bridge-path-"));
+fs.writeFileSync(path.join(pathBin, "devin-bridge" + EXE), "#!/bin/sh\n", { mode: 0o755 });
+process.env.PATH = `${pathBin}${path.delimiter}${process.env.PATH}`;
 
 ext.activate({ subscriptions: [] });
 
@@ -101,15 +113,17 @@ test("parseJson parses payloads and names the command on failure", () => {
   assert.throws(() => parse("(no sessions)", "sessions"), /sessions/);
 });
 
-test("spawnSpec execFiles the CLI directly — never a shell", () => {
+test("spawnSpec resolves an absolute target — never a bare name or shell", () => {
   settings = {};
   const spec = __internals__.spawnSpec(["sessions", "--json"]);
+  assert.ok(spec, "fixture devin-bridge on PATH must resolve");
   if (process.platform === "win32") {
-    // resolution may or may not find a shim here, but the file is either
-    // the bare executable or node on a resolved .js entry — never cmd.
+    // the file is either the resolved binary or node on a resolved .js
+    // entry — never cmd.exe.
     assert.notStrictEqual(spec.file, "cmd.exe");
   } else {
-    assert.deepStrictEqual(spec, { file: "devin-bridge", argv: ["sessions", "--json"] });
+    assert.ok(path.isAbsolute(spec.file), "spawn target must be absolute");
+    assert.deepStrictEqual(spec.argv, ["sessions", "--json"]);
   }
 });
 
@@ -121,35 +135,46 @@ test("a .js executable spawns through the editor's own node", () => {
   settings = {};
 });
 
-test("resolveWindowsEntry maps a .cmd shim to the npm .js entry", () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bridge-shim-"));
-  const shim = path.join(dir, "devin-bridge.cmd");
-  fs.writeFileSync(shim, "@echo off\r\n");
-  assert.strictEqual(__internals__.resolveWindowsEntry(shim), null);
-  const entry = path.join(dir, "node_modules", "@icaro0310",
-    "devin-bridge", "bin", "devin-bridge.js");
-  fs.mkdirSync(path.dirname(entry), { recursive: true });
-  fs.writeFileSync(entry, "// entry\n");
-  assert.strictEqual(__internals__.resolveWindowsEntry(shim), entry);
-  // Non-shim files never resolve to an entry.
-  assert.strictEqual(__internals__.resolveWindowsEntry(path.join(dir, "devin-bridge.exe")), null);
+// Windows cwd-search fix: an executable planted inside an UNTRUSTED
+// workspace must never be the spawn target; the trusted case keeps
+// working for repos that deliberately carry their own tools.
+const withWorkspace = (ws, trusted, fn) => {
+  const oldFolders = vscodeStub.workspace.workspaceFolders;
+  const oldTrusted = vscodeStub.workspace.isTrusted;
+  const oldPath = process.env.PATH;
+  vscodeStub.workspace.workspaceFolders = [{ uri: { fsPath: ws } }];
+  vscodeStub.workspace.isTrusted = trusted;
+  process.env.PATH = `${ws}${path.delimiter}${oldPath}`; // ws first: planted wins PATH order
+  try { return fn(); } finally {
+    vscodeStub.workspace.workspaceFolders = oldFolders;
+    vscodeStub.workspace.isTrusted = oldTrusted;
+    process.env.PATH = oldPath;
+  }
+};
+
+test("untrusted workspace skips a repo-planted executable", () => {
+  const ws = fs.mkdtempSync(path.join(os.tmpdir(), "bridge-ws-"));
+  const planted = path.join(ws, "devin-bridge" + EXE);
+  fs.writeFileSync(planted, "#!/bin/sh\n", { mode: 0o755 });
+  try {
+    const spec = withWorkspace(ws, false,
+      () => __internals__.spawnSpec(["probe", "--no-session"]));
+    assert.ok(spec, "the PATH fixture outside the workspace still resolves");
+    assert.ok(!spec.file.startsWith(ws + path.sep),
+      `spawn target must not be the planted binary: ${spec.file}`);
+  } finally { fs.rmSync(ws, { recursive: true, force: true }); }
 });
 
-test("resolveWindowsEntry resolves a project-local node_modules/.bin shim", () => {
-  // Local install: <proj>/node_modules/.bin/devin-bridge.cmd sits beside
-  // <proj>/node_modules/@icaro0310/devin-bridge/bin/devin-bridge.js —
-  // the global-prefix layout must not be the only candidate.
-  const proj = fs.mkdtempSync(path.join(os.tmpdir(), "bridge-local-"));
-  const binDir = path.join(proj, "node_modules", ".bin");
-  fs.mkdirSync(binDir, { recursive: true });
-  const shim = path.join(binDir, "devin-bridge.cmd");
-  fs.writeFileSync(shim, "@echo off\r\n");
-  assert.strictEqual(__internals__.resolveWindowsEntry(shim), null);
-  const entry = path.join(proj, "node_modules", "@icaro0310",
-    "devin-bridge", "bin", "devin-bridge.js");
-  fs.mkdirSync(path.dirname(entry), { recursive: true });
-  fs.writeFileSync(entry, "// entry\n");
-  assert.strictEqual(__internals__.resolveWindowsEntry(shim), entry);
+test("trusted workspace allows a repo-local executable", () => {
+  const ws = fs.mkdtempSync(path.join(os.tmpdir(), "bridge-ws-"));
+  const planted = path.join(ws, "devin-bridge" + EXE);
+  fs.writeFileSync(planted, "#!/bin/sh\n", { mode: 0o755 });
+  try {
+    const spec = withWorkspace(ws, true,
+      () => __internals__.spawnSpec(["probe", "--no-session"]));
+    assert.ok(spec);
+    assert.strictEqual(spec.file, planted);
+  } finally { fs.rmSync(ws, { recursive: true, force: true }); }
 });
 
 test("sessions spawns the whitelisted args in the workspace dir", async () => {
@@ -228,5 +253,32 @@ test("a failed call renders unavailable without leaving a stale color", async ()
   assert.strictEqual(out, null);
   assert.match(statusBarStub.text, /unavailable/);
   assert.strictEqual(statusBarStub.backgroundColor, undefined);
+  assertCallsReadOnly();
+});
+
+test("manifest declares limited untrusted-workspace support", () => {
+  const manifest = JSON.parse(
+    fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8"),
+  );
+  const uw = manifest.capabilities.untrustedWorkspaces;
+  assert.strictEqual(uw.supported, "limited");
+  assert.deepStrictEqual(uw.restrictedConfigurations.sort(), [
+    "devinBridge.checkOnStartup",
+    "devinBridge.executable",
+  ]);
+});
+
+test("checkOnStartup never spawns in an untrusted workspace", () => {
+  const context = { subscriptions: [] };
+  settings = { checkOnStartup: true };
+  vscodeStub.workspace.isTrusted = false;
+  calls.length = 0;
+  ext.activate(context);
+  assert.strictEqual(calls.length, 0);
+  vscodeStub.workspace.isTrusted = true;
+  ext.activate(context);
+  assert.strictEqual(calls.length, 1);
+  assert.deepStrictEqual(calls[0].args, ["sessions", "--json"]);
+  settings = {};
   assertCallsReadOnly();
 });

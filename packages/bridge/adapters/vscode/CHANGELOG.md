@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Security
+
+- Declared `capabilities.untrustedWorkspaces` (`supported: "limited"`)
+  with `restrictedConfigurations` covering `devinBridge.executable` and
+  `devinBridge.checkOnStartup`; the startup check now also requires
+  `vscode.workspace.isTrusted`, so a user-level `checkOnStartup` can no
+  longer spawn the CLI in an untrusted folder.
+
 ## [0.1.0]
 
 ### Added

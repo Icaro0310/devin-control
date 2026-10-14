@@ -5,6 +5,11 @@ import path from "node:path";
 import test from "node:test";
 import { credentialsPath, devinBin, devinBinCandidates } from "../src/acp-client.js";
 
+// PATHEXT on Windows never matches a bare extensionless file — fixtures
+// carry the real executable suffix (".EXE", matching PATHEXT's case so
+// spec.file string-compares equal).
+const EXE = process.platform === "win32" ? ".EXE" : "";
+
 
 test("Linux credentials follow XDG_DATA_HOME", () => {
   assert.equal(
@@ -39,11 +44,56 @@ test("explicit credentials path overrides platform defaults", () => {
   );
 });
 
-test("Linux CLI is resolved from PATH", () => {
+test("CLI is resolved from PATH", () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "devin-bin-"));
-  const executable = path.join(directory, "devin");
+  const executable = path.join(directory, "devin" + EXE);
   fs.writeFileSync(executable, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
-  assert.equal(devinBin({ platform: "linux", env: { PATH: directory } }), executable);
+  // Resolution goes through safe-executable, which walks the real
+  // process PATH — inject it instead of a candidate-env override.
+  const oldPath = process.env.PATH;
+  process.env.PATH = directory;
+  try {
+    const spec = devinBin({ platform: "linux", env: {}, workspaceDir: null });
+    assert.ok(spec);
+    assert.equal(spec.file, executable);
+    assert.deepEqual(spec.argv, []);
+  } finally { process.env.PATH = oldPath; }
+});
+
+// Windows cwd-search fix: the agent binary must never come from the
+// workspace being bridged — a repo-planted devin binary is skipped for
+// the user's own install, and a DEVIN_CLI_PATH inside the workspace is
+// refused outright.
+test("autodetect skips a workspace-planted binary for the user's", () => {
+  const ws = fs.mkdtempSync(path.join(os.tmpdir(), "devin-ws-"));
+  const realDir = fs.mkdtempSync(path.join(os.tmpdir(), "devin-real-"));
+  for (const dir of [ws, realDir]) {
+    fs.writeFileSync(path.join(dir, "devin" + EXE), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+  }
+  const oldPath = process.env.PATH;
+  process.env.PATH = `${ws}${path.delimiter}${realDir}`; // ws wins PATH order
+  try {
+    const spec = devinBin({ platform: "linux", env: {}, workspaceDir: ws });
+    assert.equal(spec && spec.file, path.join(realDir, "devin" + EXE));
+  } finally { process.env.PATH = oldPath; }
+});
+
+test("a DEVIN_CLI_PATH inside the workspace is refused", () => {
+  const ws = fs.mkdtempSync(path.join(os.tmpdir(), "devin-ws-"));
+  const planted = path.join(ws, "devin" + EXE);
+  const realDir = fs.mkdtempSync(path.join(os.tmpdir(), "devin-real-"));
+  fs.writeFileSync(planted, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+  fs.writeFileSync(path.join(realDir, "devin" + EXE), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+  const oldPath = process.env.PATH;
+  process.env.PATH = realDir;
+  try {
+    const spec = devinBin({
+      platform: "linux",
+      env: { DEVIN_CLI_PATH: planted },
+      workspaceDir: ws,
+    });
+    assert.equal(spec && spec.file, path.join(realDir, "devin" + EXE));
+  } finally { process.env.PATH = oldPath; }
 });
 
 test("Windows bundle candidate follows LOCALAPPDATA", () => {
