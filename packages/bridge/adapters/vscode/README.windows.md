@@ -9,11 +9,22 @@ inject a command. The adapter therefore never uses a shell:
 
 - when `devinBridge.executable` is a `.js` path, it is spawned through
   the editor's own Node (`process.execPath`);
-- when it is a bare name (default `devin-bridge`), the adapter resolves
-  the shim via `where.exe`, then runs Node on the npm-generated entry at
-  `<shim-dir>\node_modules\@icaro0310\devin-bridge\bin\devin-bridge.js`;
-- nothing resolves → the spawn fails `ENOENT` and the "install it"
-  message shows. Fail-closed: no shell, ever.
+- when it is a bare name (default `devin-bridge`), the shared
+  `safe-executable.cjs` resolver walks `PATH` itself — never `where.exe`,
+  which searches the cwd first — and unwraps the npm `.cmd` shim to its
+  real `.js` entry, which is spawned on `process.execPath`;
+- nothing resolves → the "install it" message shows. Fail-closed: no
+  shell, ever.
+
+Because Windows `CreateProcess` searches the current directory *before*
+`PATH`, a bare `devin-bridge` spawned with `cwd` = the workspace could
+run a binary planted inside an untrusted repo. The resolver returns only
+absolute spawn targets, and in an untrusted workspace (Restricted Mode)
+it refuses any candidate that resolves inside the repo — the workspace
+can never supply the executable. The same resolver guards the bridge
+CLI's own autodetect of the `devin.exe` agent (`DEVIN_CLI_PATH`, the
+per-user install dir, then `PATH`): a repo-resident agent binary is
+never picked up.
 
 `policy --check` targets always travel as one literal argv element after
 a `--` end-of-options marker.

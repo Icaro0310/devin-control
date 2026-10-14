@@ -26,7 +26,16 @@ import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 import { spawn } from "node:child_process";
+import { createRequire } from "node:module";
 import { Policy } from "./policy.js";
+
+// Shared safe-executable resolver — byte-identical copy of devin-powerups'
+// adapters/shared/safe-executable.cjs (lockstep enforced by
+// config-restricted-check). On Windows, CreateProcess searches cwd before
+// PATH: the agent binary resolves to an absolute spawn target or not at
+// all, and autodetect never accepts a workspace-resident candidate.
+const require = createRequire(import.meta.url);
+const { resolveSafeExecutable } = require("./safe-executable.cjs");
 
 export function credentialsPath({
   platform = process.platform,
@@ -64,28 +73,26 @@ export function devinBinCandidates({
   return candidates;
 }
 
-function findExecutable(candidate, env, platform) {
-  if (path.isAbsolute(candidate) || candidate.includes("/") || candidate.includes("\\")) {
-    return fs.existsSync(candidate) ? candidate : null;
-  }
-  const extensions = platform === "win32"
-    ? (env.PATHEXT || ".EXE;.CMD;.BAT").split(";")
-    : [""];
-  for (const directory of (env.PATH || "").split(path.delimiter)) {
-    for (const extension of extensions) {
-      const file = path.join(directory, candidate + extension);
-      if (fs.existsSync(file)) return file;
-    }
+/**
+ * Autodetect the Devin CLI agent binary. Candidate precedence is
+ * unchanged (DEVIN_CLI_PATH → per-user install dir → PATH basename), but
+ * each candidate resolves through the shared safe-executable helper: a
+ * manual PATH walk that never touches cwd and always returns an absolute
+ * spawn target {file, argv}. The workspace is untrusted input by
+ * definition — autodetect (trusted:false) refuses anything inside
+ * `opts.workspaceDir` (default: process.cwd()); an explicit --bin is a
+ * user gesture and may point there on purpose. Returns the spec or null.
+ */
+export function devinBin(opts = {}) {
+  const workspaceDir = "workspaceDir" in opts ? opts.workspaceDir : process.cwd();
+  const trusted = opts.trusted === true;
+  for (const candidate of devinBinCandidates(opts)) {
+    const spec = resolveSafeExecutable(candidate, {
+      workspaceDir, trusted, npmPackage: null,
+    });
+    if (spec) return spec;
   }
   return null;
-}
-
-export function devinBin(opts = {}) {
-  const env = opts.env || process.env;
-  const platform = opts.platform || process.platform;
-  return devinBinCandidates(opts)
-    .map((candidate) => findExecutable(candidate, env, platform))
-    .find(Boolean) || null;
 }
 
 /** Read windsurf_api_key from %APPDATA%\devin\credentials.toml (IDE session token). */
@@ -119,10 +126,14 @@ export class DevinAcp {
   constructor({
     bin, args = ["acp"], cwd, policy, askHandler, token, timeoutMs, onNotification,
   } = {}) {
-    this.bin = bin || devinBin();
-    if (!this.bin) throw new Error("Devin CLI not found (set DEVIN_CLI_PATH)");
-    this.args = args;
     this.cwd = cwd || process.cwd();
+    const spec = bin
+      ? resolveSafeExecutable(bin, { workspaceDir: this.cwd, trusted: true })
+      : devinBin({ workspaceDir: this.cwd });
+    if (!spec) throw new Error("Devin CLI not found (set DEVIN_CLI_PATH)");
+    this.bin = spec.file;
+    this.binArgv = spec.argv;
+    this.args = args;
     this.policy = policy || Policy.default({ root: this.cwd });
     this.askHandler = askHandler || null;
     this._token = token || null;
@@ -137,7 +148,7 @@ export class DevinAcp {
   }
 
   start() {
-    this.child = spawn(this.bin, this.args, {
+    this.child = spawn(this.bin, this.binArgv.concat(this.args), {
       cwd: this.cwd,
       stdio: ["pipe", "pipe", "ignore"],
     });

@@ -12,8 +12,11 @@
 
 const vscode = require("vscode");
 const cp = require("child_process");
-const fs = require("fs");
-const path = require("path");
+// Shared Restricted-Mode-safe executable resolver — byte-identical copy of
+// devin-powerups' adapters/shared/safe-executable.cjs (lockstep enforced by
+// config-restricted-check). On Windows, CreateProcess searches cwd before
+// PATH: spawn only the absolute path this returns.
+const { resolveSafeExecutable } = require("./safe-executable.cjs");
 
 let statusBar;
 let seq = 0; // monotonic — a slow call must not overwrite a newer verdict
@@ -49,53 +52,34 @@ function workspaceDir() {
   return folders[0].uri.fsPath;
 }
 
-// Windows only: the npm install is a .cmd shim execFile cannot launch —
-// and routing through cmd.exe would re-interpret metacharacters. Locate
-// the shim via `where` (a binary, no shell) and resolve the npm-generated
-// entry next to it. Null = unresolvable; the spawn then fails ENOENT.
-function resolveWindowsEntry(exe) {
-  let file = exe;
-  if (!/[\\/]/.test(exe)) {
-    try {
-      const out = cp.execFileSync("where.exe", [exe], { encoding: "utf8", timeout: 10000 });
-      const lines = out.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-      file = lines.find((l) => /\.(cmd|bat)$/i.test(l)) || lines[0];
-    } catch { return null; }
-  }
-  if (!file || !/\.(cmd|bat)$/i.test(file)) return null;
-  // The real .js entry sits beside the shim in two layouts: a global
-  // install puts node_modules/ under the npm prefix itself
-  // (<prefix>/devin-bridge.cmd → <prefix>/node_modules/...), while a
-  // project-local install shims into node_modules/.bin
-  // (<proj>/node_modules/.bin/devin-bridge.cmd → <proj>/node_modules/...).
-  const dir = path.dirname(file);
-  const candidates = [
-    path.join(dir, "node_modules", "@icaro0310", "devin-bridge", "bin", "devin-bridge.js"),
-    path.join(dir, "..", "@icaro0310", "devin-bridge", "bin", "devin-bridge.js"),
-  ];
-  return candidates.find((c) => fs.existsSync(c)) || null;
-}
-
 // What to spawn for a call. A .js executable always runs through the
-// editor's own Node — also the Windows path once the shim resolves.
-// Never shell:true: argv would pass through cmd's string interpretation.
+// editor's own Node. Everything else resolves through the shared helper:
+// it walks PATH itself (where.exe searches cwd first — the very vector
+// this closes), unwraps npm .cmd/.bat shims to their .js entry, and in an
+// untrusted workspace refuses any candidate inside the repo. Null = not
+// found; runBridge surfaces the install hint. Never shell:true: argv
+// would pass through cmd's string interpretation.
 function spawnSpec(args) {
   const { executable } = config();
   if (/\.js$/i.test(executable)) {
     return { file: process.execPath, argv: [executable, ...args] };
   }
-  if (process.platform === "win32") {
-    const entry = resolveWindowsEntry(executable);
-    if (entry) return { file: process.execPath, argv: [entry, ...args] };
-  }
-  return { file: executable, argv: args };
+  const spec = resolveSafeExecutable(executable, {
+    workspaceDir: workspaceDir(),
+    trusted: vscode.workspace.isTrusted,
+    npmPackage: "@icaro0310/devin-bridge",
+  });
+  return spec ? { file: spec.file, argv: spec.argv.concat(args) } : null;
 }
 
 // Resolves {code, stdout, stderr}; non-zero exit is a renderable result
 // (probe exits 1 on a failed check), not an error.
 function runBridge(args) {
-  const spec = spawnSpec(args);
   return new Promise((resolve, reject) => {
+    const spec = spawnSpec(args);
+    if (!spec) return reject(new Error(
+      "devin-bridge not found on PATH. Install it " +
+      "(npm i -g @icaro0310/devin-bridge) or set devinBridge.executable."));
     cp.execFile(spec.file, spec.argv,
       { cwd: workspaceDir(), timeout: 120000, maxBuffer: 8 * 1024 * 1024 },
       (err, stdout, stderr) => {
@@ -203,6 +187,6 @@ function deactivate() {}
 module.exports = { activate, deactivate };
 // Test-only surface — pure internals reachable without the editor.
 module.exports.__internals__ = {
-  COMPATIBLE_CLI, READONLY_ARGS, CAPS, parseJson, spawnSpec, resolveWindowsEntry,
+  COMPATIBLE_CLI, READONLY_ARGS, CAPS, parseJson, spawnSpec,
   sessions, policyShow, policyCheck, probe,
 };
