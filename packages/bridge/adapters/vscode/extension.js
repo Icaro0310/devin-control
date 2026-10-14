@@ -43,13 +43,15 @@ function config() {
 }
 
 // .sessions.json and policy.json resolve relative to the repo — run in the
-// workspace folder so the view matches the CLI on the command line.
-function workspaceDir() {
+// workspace folder so the view matches the CLI on the command line. All
+// open folders feed the resolver's inside-workspace boundary (multi-root:
+// a binary in ANY folder is workspace code); the first is the spawn cwd.
+function workspaceDirs() {
   const folders = vscode.workspace.workspaceFolders;
   if (!folders || !folders.length) {
     throw new Error("devin-bridge adapter needs an open workspace folder");
   }
-  return folders[0].uri.fsPath;
+  return folders.map((f) => f.uri.fsPath);
 }
 
 // What to spawn for a call. A .js executable always runs through the
@@ -65,7 +67,7 @@ function spawnSpec(args) {
     return { file: process.execPath, argv: [executable, ...args] };
   }
   const spec = resolveSafeExecutable(executable, {
-    workspaceDir: workspaceDir(),
+    workspaceDirs: workspaceDirs(),
     trusted: vscode.workspace.isTrusted,
     npmPackage: "@icaro0310/devin-bridge",
   });
@@ -81,7 +83,7 @@ function runBridge(args) {
       "devin-bridge not found on PATH. Install it " +
       "(npm i -g @icaro0310/devin-bridge) or set devinBridge.executable."));
     cp.execFile(spec.file, spec.argv,
-      { cwd: workspaceDir(), timeout: 120000, maxBuffer: 8 * 1024 * 1024 },
+      { cwd: workspaceDirs()[0], timeout: 120000, maxBuffer: 8 * 1024 * 1024 },
       (err, stdout, stderr) => {
         if (err && err.killed) return reject(new Error("devin-bridge timed out after 120s"));
         if (err && err.code === "ENOENT") return reject(new Error(

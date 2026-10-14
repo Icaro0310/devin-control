@@ -81,14 +81,16 @@ export function devinBinCandidates({
  * spawn target {file, argv}. The workspace is untrusted input by
  * definition — autodetect (trusted:false) refuses anything inside
  * `opts.workspaceDir` (default: process.cwd()); an explicit --bin is a
- * user gesture and may point there on purpose. Returns the spec or null.
+ * user gesture and may point there on purpose. `opts.env.PATH` overrides
+ * the walked PATH (a caller carrying its own environment gets its own
+ * resolution). Returns the spec or null.
  */
 export function devinBin(opts = {}) {
   const workspaceDir = "workspaceDir" in opts ? opts.workspaceDir : process.cwd();
   const trusted = opts.trusted === true;
   for (const candidate of devinBinCandidates(opts)) {
     const spec = resolveSafeExecutable(candidate, {
-      workspaceDir, trusted, npmPackage: null,
+      workspaceDir, trusted, npmPackage: null, env: opts.env,
     });
     if (spec) return spec;
   }
