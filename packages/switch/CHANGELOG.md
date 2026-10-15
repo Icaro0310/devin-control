@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `devin-switch-mcp` exits with a one-line install hint when the `mcp`
+  extra is missing instead of dumping a traceback; startup
+  `ImportError`s from `.run()` keep their traceback.
+
 ### Added
 
 - Daemon adapters for the drift check (`adapters/daemon/`):
