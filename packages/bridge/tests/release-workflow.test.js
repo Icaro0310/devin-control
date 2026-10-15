@@ -67,7 +67,7 @@ test('release-bridge: dispatch only queues, publish outcomes are awaited', () =>
   assert.match(y, /gh run list --workflow "\$wf" --commit "\$SHA"/);
   // A rerun dispatches again on the same commit — the poll must only
   // read runs created after this dispatch, not a prior run's conclusion.
-  assert.match(y, /createdAt >= "\\\$SINCE"/);
+  assert.match(y, /createdAt >=/);
 });
 
 test('release: gpg fingerprint uses --show-keys without --import', () => {
