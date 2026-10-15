@@ -44,3 +44,32 @@ test('npm publishers: merged-origin guard present on both registries', () => {
     assert.match(wf(name), /compare\/main\.\.\.\$\{GITHUB_SHA\}/, name);
   }
 });
+
+test('npm publishers: dispatch checks the tag on THIS commit (GITHUB_SHA)', () => {
+  for (const name of ['publish-bridge-npm.yml', 'publish-bridge-gpr.yml']) {
+    const y = wf(name);
+    assert.match(y, /git\/refs\/tags\/\$want/, name);
+    assert.match(y, /GITHUB_SHA/, name);
+  }
+});
+
+test('npm publishers: already-published versions skip instead of failing', () => {
+  for (const name of ['publish-bridge-npm.yml', 'publish-bridge-gpr.yml']) {
+    const y = wf(name);
+    assert.match(y, /npm view/, name);
+    assert.match(y, /steps\.dup\.outputs\.dup != 'true'/, name);
+  }
+});
+
+test('release-bridge: dispatch only queues, publish outcomes are awaited', () => {
+  const y = wf('release-bridge.yml');
+  assert.match(y, /Wait for npm publishers/);
+  assert.match(y, /gh run list --workflow "\$wf" --commit "\$SHA"/);
+});
+
+test('release: gpg fingerprint uses --show-keys without --import', () => {
+  const y = wf('release.yml');
+  assert.match(y, /gpg --batch --show-keys --with-colons/);
+  assert.equal(y.includes('--import --show-keys'), false,
+    'gpg rejects --import --show-keys as conflicting commands');
+});

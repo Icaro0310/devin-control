@@ -113,6 +113,33 @@ jobs:
           gh workflow run publish-bridge-npm.yml --ref "$RELEASE_TAG"
           gh workflow run publish-bridge-gpr.yml --ref "$RELEASE_TAG"
 
+      # `gh workflow run` only queues — poll both dispatched runs so a
+      # failed npm publish fails THIS release instead of staying green.
+      - name: Wait for npm publishers
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          SHA=$(gh api "repos/${{ github.repository }}/commits/$RELEASE_TAG" --jq .sha)
+          deadline=$((SECONDS + 900))
+          while [ $SECONDS -lt $deadline ]; do
+            pending=0
+            for wf in publish-bridge-npm.yml publish-bridge-gpr.yml; do
+              concl=$(gh run list --workflow "$wf" --commit "$SHA" --limit 1 \
+                --json conclusion -q '.[0].conclusion // ""')
+              case "$concl" in
+                success) ;;
+                failure|cancelled|timed_out|action_required)
+                  echo "::error::$wf concluded '$concl' — npm publish failed"; exit 1 ;;
+                *) pending=1 ;;
+              esac
+            done
+            [ $pending -eq 0 ] && { echo "both publishers succeeded"; exit 0; }
+            sleep 20
+          done
+          echo "::error::npm publishers did not finish within 15 min"
+          exit 1
+
   fanout:
     needs: [validate, release]
     # Publish legs only ever run on a real tag push after the GitHub
