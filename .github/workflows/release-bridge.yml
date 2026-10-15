@@ -1,0 +1,167 @@
+name: release-bridge
+
+# npm CLI + VS Code extension release for packages/bridge — the bridge
+# ships both artifacts under one version (@icaro0310/devin-bridge 0.1.1
+# == adapters/vscode devin-bridge 0.1.1). Tag `bridge-vX.Y.Z` mints the
+# GitHub release with the packaged .vsix, dispatches the npmjs.com /
+# GitHub Packages publishers, and fans out to the reusable
+# release.yml@v1: detect finds no pyproject under packages/bridge
+# (extension-only release — the wheel verify and PyPI legs skip) →
+# vscode-ext lint → vsce → VS Code Marketplace (Entra OIDC) →
+# Open VSX (OVSX_PAT).
+#
+# npm legs: publish-bridge-npm.yml / publish-bridge-gpr.yml also fire on
+# release:published, but a release minted by GITHUB_TOKEN emits no such
+# event — the release job dispatches both explicitly on the tag.
+# pypi-publish.yml is NOT dispatched: its `package` input only accepts
+# orchestrator/switch and the bridge is a Node package.
+#
+# Marketplace: needs repo vars AZURE_CLIENT_ID / AZURE_TENANT_ID and a
+# federated credential `gh-devin-control-release` on the
+# devin-vscode-marketplace app registration (subject
+# repo:Icaro0310/devin-control:environment:release) — until they exist
+# the reusable skips the leg with a warning and the .vsix stays as the
+# `vsix` artifact for manual portal upload.
+
+on:
+  push:
+    tags:
+      - "bridge-v*"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  actions: write   # dispatch publish-bridge-* after the release — see below
+
+jobs:
+  # Shared prerequisite: a mistagged `bridge-vX.Y.Z` must fail HERE,
+  # before either the release job or the fan-out publishes anything.
+  # `release` and `fanout` both declare `needs: validate`, so the
+  # extension can never ship under a label that disagrees with the
+  # manifests.
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # `bridge-vX.Y.Z` convention — the extension manifest and the npm
+      # CLI manifest must agree (the reusable lint re-checks the tag on
+      # the fanout leg).
+      - name: Check tag matches manifest versions
+        if: github.ref_type == 'tag'
+        run: |
+          want="${GITHUB_REF_NAME#bridge-v}"
+          got_ext=$(python3 -c "import json; print(json.load(open('packages/bridge/adapters/vscode/package.json'))['version'])")
+          got_cli=$(python3 -c "import json; print(json.load(open('packages/bridge/package.json'))['version'])")
+          if [ "$want" != "$got_ext" ] || [ "$want" != "$got_cli" ]; then
+            echo "::error::tag '$GITHUB_REF_NAME' ($want) vs adapters/vscode package.json $got_ext / packages/bridge package.json $got_cli"
+            exit 1
+          fi
+
+  release:
+    needs: validate
+    # GitHub release creation stays tag-push-only — a dispatch (even
+    # against an existing tag ref) only runs `validate`.
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+
+      - name: Package the extension (.vsix)
+        working-directory: packages/bridge/adapters/vscode
+        run: |
+          # No package-lock.json and zero dependencies — `npm ci` cannot
+          # run; install only stamps the manifest. `--if-present` keeps
+          # the build a no-op for this plain-JS extension. Produces
+          # devin-bridge-<version>.vsix.
+          npm install --no-audit --no-fund
+          npm run build --if-present
+          npx @vscode/vsce package
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          # Idempotent: a rerun after a partial failure uploads over the
+          # existing release instead of dying on `gh release create`.
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" \
+              packages/bridge/adapters/vscode/*.vsix --clobber
+          else
+            gh release create "$RELEASE_TAG" \
+              packages/bridge/adapters/vscode/*.vsix \
+              --verify-tag --generate-notes
+          fi
+
+      # `gh release create` with GITHUB_TOKEN does NOT emit a
+      # `release.published` event — GitHub blocks recursive workflow
+      # triggers from the same token — so the release:published trigger
+      # on publish-bridge-npm.yml / publish-bridge-gpr.yml would never
+      # fire on its own and the npm legs would be silently lost.
+      # Dispatch both explicitly on the tag instead. (pypi-publish.yml
+      # is not dispatched: its `package` input has no bridge option.)
+      - name: Trigger npm publish workflows
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          # Capture the dispatch instant first — the wait below filters
+          # runs created after it, so a release retry cannot read the
+          # PREVIOUS dispatch's conclusions for the same commit.
+          date -u +%Y-%m-%dT%H:%M:%SZ > /tmp/dispatched-at
+          gh workflow run publish-bridge-npm.yml --ref "$RELEASE_TAG"
+          gh workflow run publish-bridge-gpr.yml --ref "$RELEASE_TAG"
+
+      # `gh workflow run` only queues — poll both dispatched runs so a
+      # failed npm publish fails THIS release instead of staying green.
+      - name: Wait for npm publishers
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          SHA=$(gh api "repos/${{ github.repository }}/commits/$RELEASE_TAG" --jq .sha)
+          SINCE=$(cat /tmp/dispatched-at)
+          deadline=$((SECONDS + 900))
+          while [ $SECONDS -lt $deadline ]; do
+            pending=0
+            for wf in publish-bridge-npm.yml publish-bridge-gpr.yml; do
+              concl=$(gh run list --workflow "$wf" --commit "$SHA" --limit 5 \
+                --json createdAt,conclusion \
+                -q "[.[] | select(.createdAt >= \"$SINCE\")] | .[0].conclusion // \"\"")
+              case "$concl" in
+                success) ;;
+                failure|cancelled|timed_out|action_required)
+                  echo "::error::$wf concluded '$concl' — npm publish failed"; exit 1 ;;
+                *) pending=1 ;;
+              esac
+            done
+            [ $pending -eq 0 ] && { echo "both publishers succeeded"; exit 0; }
+            sleep 20
+          done
+          echo "::error::npm publishers did not finish within 15 min"
+          exit 1
+
+  fanout:
+    needs: [validate, release]
+    # Publish legs only ever run on a real tag push after the GitHub
+    # release succeeded — a workflow_dispatch must not publish to the
+    # registries (the reusable's own tag gate is tag-only too).
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    # Every scope the reusable requests must be granted here — a
+    # missing scope fails the whole run at startup_failure.
+    permissions:
+      contents: read
+      id-token: write   # Entra OIDC + cosign keyless
+      packages: write   # docker leg scope
+    uses: Icaro0310/devin-powerups/.github/workflows/release.yml@v1
+    # Explicit mapping, not `inherit`: forwards only the Open VSX token.
+    secrets:
+      OVSX_PAT: ${{ secrets.OVSX_PAT }}
+    with:
+      package-dir: packages/bridge
+      vscode-ext-dir: packages/bridge/adapters/vscode

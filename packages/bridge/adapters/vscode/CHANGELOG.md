@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-15
+
 ### Security
 
 - Declared `capabilities.untrustedWorkspaces` (`supported: "limited"`)

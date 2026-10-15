@@ -2,7 +2,7 @@
   "name": "devin-bridge",
   "displayName": "devin-bridge",
   "description": "Read-only views of the devin-bridge ACP bridge: session mappings, effective policy, and the no-session connectivity probe. Thin adapter: the extension shells out to the devin-bridge CLI and renders the result — and by construction it can never reach new/resume/prompt/intake, so no session can be created or driven from the editor.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "icaro0310",
   "license": "MIT",
   "devin-bridge-cli": ">=0.1.0,<0.2.0",
