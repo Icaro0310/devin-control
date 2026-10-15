@@ -20,6 +20,8 @@ module is only wiring — needs the ``mcp`` extra:
 
 from __future__ import annotations
 
+import sys
+
 from devin_switch.mcp_actions import (
     _err,
     do_diff,
@@ -150,7 +152,11 @@ def build_server():
 
 
 def main() -> None:
-    build_server().run(transport="stdio")
+    try:
+        build_server().run(transport="stdio")
+    except ImportError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
