@@ -60,9 +60,9 @@ jobs:
 
   release:
     needs: validate
-    # GitHub release creation stays tag-only — a dispatch proves the
-    # fan-out legs without minting a release.
-    if: github.ref_type == 'tag'
+    # GitHub release creation stays tag-push-only — a dispatch (even
+    # against an existing tag ref) only runs `validate`.
+    if: github.event_name == 'push' && github.ref_type == 'tag'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -114,7 +114,11 @@ jobs:
           gh workflow run publish-bridge-gpr.yml --ref "$RELEASE_TAG"
 
   fanout:
-    needs: validate
+    needs: [validate, release]
+    # Publish legs only ever run on a real tag push after the GitHub
+    # release succeeded — a workflow_dispatch must not publish to the
+    # registries (the reusable's own tag gate is tag-only too).
+    if: github.event_name == 'push' && github.ref_type == 'tag'
     # Every scope the reusable requests must be granted here — a
     # missing scope fails the whole run at startup_failure.
     permissions:
