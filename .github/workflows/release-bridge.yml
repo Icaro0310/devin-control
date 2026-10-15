@@ -110,6 +110,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
+          # Capture the dispatch instant first — the wait below filters
+          # runs created after it, so a release retry cannot read the
+          # PREVIOUS dispatch's conclusions for the same commit.
+          date -u +%Y-%m-%dT%H:%M:%SZ > /tmp/dispatched-at
           gh workflow run publish-bridge-npm.yml --ref "$RELEASE_TAG"
           gh workflow run publish-bridge-gpr.yml --ref "$RELEASE_TAG"
 
@@ -121,12 +125,14 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           SHA=$(gh api "repos/${{ github.repository }}/commits/$RELEASE_TAG" --jq .sha)
+          SINCE=$(cat /tmp/dispatched-at)
           deadline=$((SECONDS + 900))
           while [ $SECONDS -lt $deadline ]; do
             pending=0
             for wf in publish-bridge-npm.yml publish-bridge-gpr.yml; do
-              concl=$(gh run list --workflow "$wf" --commit "$SHA" --limit 1 \
-                --json conclusion -q '.[0].conclusion // ""')
+              concl=$(gh run list --workflow "$wf" --commit "$SHA" --limit 5 \
+                --json createdAt,conclusion \
+                -q "[.[] | select(.createdAt >= \"$SINCE\")] | .[0].conclusion // \"\"")
               case "$concl" in
                 success) ;;
                 failure|cancelled|timed_out|action_required)
