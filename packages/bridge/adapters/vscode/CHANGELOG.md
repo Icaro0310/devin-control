@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-16
+
+### Changed
+
+- `devin-bridge-cli` compatibility range widened to `>=0.1.0,<0.3.0`
+  to accept the 0.2.0 CLI (agent resolver env overrides + spawn
+  lifecycle hardening).
+
 ## [0.1.1] - 2026-10-15
 
 ### Security
