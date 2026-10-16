@@ -488,25 +488,34 @@ export class DevinAcp {
       protocolVersion: 1,
       clientCapabilities: { fs: { readTextFile: true, writeTextFile: true }, terminal: true },
     });
-    const method = agentAuthMethod();
+    const method = this._authMethodFor(res);
     if (method !== null) {
-      // ACP negotiation: an agent that advertises `authMethods` is only
-      // sent a method it supports — anything else is skipped rather than
-      // an unsupported call. An agent that does not advertise the field
-      // at all (the Devin CLI) gets the configured method
-      // unconditionally; an empty advertised list means the agent
-      // supports no auth methods — skip the call entirely.
-      const offered = res?.authMethods;
-      if (offered == null
-          || offered.some((m) => (m.id || m.methodId) === method)) {
-        const apiKey = this._token || readSessionToken();
-        await this.call("authenticate", {
-          methodId: method,
-          _meta: { api_key: apiKey },
-        });
-      }
+      const apiKey = this._token || readSessionToken();
+      await this.call("authenticate", {
+        methodId: method,
+        _meta: { api_key: apiKey },
+      });
     }
     return this;
+  }
+
+  /**
+   * The auth method to send for an `initialize` response, or `null` to
+   * skip `authenticate`. ACP negotiation: an agent that advertises
+   * `authMethods` is only sent a method it supports — anything else is
+   * skipped rather than an unsupported call. An agent that does not
+   * advertise the field at all (the Devin CLI) gets the configured
+   * method unconditionally; an empty advertised list means the agent
+   * supports no auth methods.
+   */
+  _authMethodFor(initRes) {
+    const method = agentAuthMethod();
+    if (method === null) return null;
+    const offered = initRes?.authMethods;
+    if (offered == null) return method;
+    return offered.some((m) => (m.id || m.methodId) === method)
+      ? method
+      : null;
   }
 
   /**
