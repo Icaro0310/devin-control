@@ -91,13 +91,37 @@ export function normalizeFsPath(p, root = process.cwd()) {
   return abs.replace(/\\/g, "/").replace(/\/+$/, "");
 }
 
-/** Candidate strings an fs path is tested against: the absolute form plus
- *  the root-relative form when the path lives under `root`. */
+/** Canonical form of an existing path ("/"-separated), null when the
+ *  path does not resolve — nonexistent or unreadable targets keep
+ *  lexical-only candidates. */
+function realpathOf(abs) {
+  try {
+    return fs.realpathSync(abs.replace(/\//g, path.sep))
+      .replace(/\\/g, "/")
+      .replace(/^\/\/\?\/UNC\//i, "//") // \\?\UNC\s\s → \\s\s
+      .replace(/^\/\/\?\//, "")        // strip the Win32 \\?\ prefix
+      .replace(/\/+$/, "");
+  } catch {
+    return null;
+  }
+}
+
+/** Candidate strings an fs path is tested against: the absolute form,
+ *  its canonical realpath (a symlink cannot smuggle a denied or
+ *  disallowed target past lexical matching), plus the root-relative
+ *  forms of both when they live under `root`. */
 function fsCandidates(p, root) {
   const abs = normalizeFsPath(p, root);
-  const rel = path.relative(root, abs.replace(/\//g, path.sep)).replace(/\\/g, "/");
-  const out = [abs];
-  if (rel && !rel.startsWith("..") && !path.isAbsolute(rel)) out.push(rel);
+  const real = realpathOf(abs);
+  const out = [];
+  for (const candidate of real && real !== abs ? [abs, real] : [abs]) {
+    if (!out.includes(candidate)) out.push(candidate);
+    const rel = path.relative(root, candidate.replace(/\//g, path.sep))
+      .replace(/\\/g, "/");
+    if (rel && !rel.startsWith("..") && !path.isAbsolute(rel) && !out.includes(rel)) {
+      out.push(rel);
+    }
+  }
   return out;
 }
 
@@ -222,15 +246,23 @@ export class Policy {
   /**
    * Deny reads of one exact path no matter what the rules say — used for
    * the resolved credentials file, which a custom BRIDGE_CREDENTIALS_PATH
-   * can place outside the built-in credential-store basenames.
+   * can place outside the built-in credential-store basenames. Both the
+   * lexical and the canonical realpath forms are denied: a creds path
+   * reached through a symlinked directory must still match the request's
+   * realpath candidate.
    */
   denyFsReadPath(p) {
-    const abs = normalizeFsPath(p, this.root);
-    const re = new RegExp(
-      `^${abs.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
-      this._fsCaseSensitive ? "" : "i",
-    );
-    this._rules.fsRead.deny.push(re);
+    const lexical = normalizeFsPath(p, this.root);
+    const paths = [lexical];
+    const real = realpathOf(lexical);
+    if (real && real !== lexical) paths.push(real);
+    const flags = this._fsCaseSensitive ? "" : "i";
+    for (const abs of paths) {
+      this._rules.fsRead.deny.push(new RegExp(
+        `^${abs.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
+        flags,
+      ));
+    }
     return this;
   }
 

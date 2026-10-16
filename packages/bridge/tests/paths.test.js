@@ -276,6 +276,36 @@ test("the resolved credentials path is always denied to agent fs reads", () => {
   }
 });
 
+test("a symlink to the configured credentials file is denied via realpath", (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "creds-link-"));
+  const creds = path.join(dir, "agent-secrets.toml");
+  const link = path.join(dir, "innocent.txt");
+  fs.writeFileSync(creds, 'windsurf_api_key = "x"\n');
+  try { fs.symlinkSync(creds, link); }
+  catch { return t.skip("symlink creation needs privileges on this platform"); }
+  const saved = process.env.BRIDGE_CREDENTIALS_PATH;
+  process.env.BRIDGE_CREDENTIALS_PATH = creds;
+  try {
+    const acp = new DevinAcp({
+      bin: process.execPath,
+      args: [],
+      cwd: dir,
+      policy: new Policy(
+        { version: 1, fs: { read: { allow: ["**"] } } },
+        { root: dir },
+      ),
+      token: "t",
+    });
+    // lexical name of the link matches nothing denied; realpath does
+    assert.equal(acp.policy.checkFsRead(link), "deny");
+    assert.equal(acp.policy.checkFsRead(creds), "deny");
+    assert.equal(acp.policy.checkFsRead(path.join(dir, "other.txt")), "allow");
+  } finally {
+    if (saved === undefined) delete process.env.BRIDGE_CREDENTIALS_PATH;
+    else process.env.BRIDGE_CREDENTIALS_PATH = saved;
+  }
+});
+
 test("DevinAcp honors BRIDGE_AGENT_BIN + BRIDGE_AGENT_ARGS without opts", () => {
   const saved = {
     BRIDGE_AGENT_BIN: process.env.BRIDGE_AGENT_BIN,

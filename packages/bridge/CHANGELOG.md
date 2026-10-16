@@ -29,6 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   set whatever the rules allow — a custom `BRIDGE_CREDENTIALS_PATH` can
   sit outside the built-in credential-store basenames and still cannot
   be read back by an agent.
+- fs path checks now test the canonical `realpath` of every request
+  alongside the lexical path: a symlink (or a symlinked directory in the
+  configured credentials path) can no longer smuggle a denied target —
+  credential stores included — past an `allow` policy.
 
 ## [0.1.1] - 2026-10-15
 

@@ -251,7 +251,8 @@ Options: --sessions-file f  --policy f  --bin path  --timeout-ms n  --yes
   honoured — unsupported methods are not sent);
   `BRIDGE_CREDENTIALS_PATH` overrides the credentials.toml path before
   `DEVIN_CREDENTIALS_PATH`. The resolved credentials path is always
-  denied to agent fs reads regardless of policy rules.
+  denied to agent fs reads regardless of policy rules, and fs checks
+  match the request's canonical realpath — symlinks cannot evade denies.
 
 ## 11. Testing
 
