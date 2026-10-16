@@ -22,7 +22,7 @@ let statusBar;
 let seq = 0; // monotonic — a slow call must not overwrite a newer verdict
 
 // CLI JSON payload contract — sync with "devin-bridge-cli" in package.json.
-const COMPATIBLE_CLI = { min: [0, 1], maxExclusive: [0, 2] };
+const COMPATIBLE_CLI = { min: [0, 1], maxExclusive: [0, 3] };
 
 // The entire CLI surface this adapter can reach — --no-session is not
 // optional on probe (without it the probe creates a session).
