@@ -27,6 +27,16 @@
  *                           skips authenticate (default: the
  *                           strategy's, "devin-browser" for devin)
  *   BRIDGE_CREDENTIALS_PATH credentials.toml override (any strategy)
+ *                           NOTE: there is no BRIDGE_AGENT_TOKEN_KEY —
+ *                           the credentials key name itself always comes
+ *                           from the selected strategy's tokenKey
+ *                           ("windsurf_api_key" for devin, the only
+ *                           registered strategy). A custom agent driven
+ *                           via BRIDGE_AGENT_BIN therefore still reads
+ *                           `windsurf_api_key = "..."` from its
+ *                           credentials.toml; agents with a different
+ *                           secret shape need a registry entry or
+ *                           BRIDGE_AGENT_AUTH=none.
  *   DEVIN_CLI_PATH          devin strategy: Devin CLI executable
  *                           (auto-detected from PATH)
  *   DEVIN_CREDENTIALS_PATH  legacy credentials override — kept for
@@ -190,10 +200,21 @@ export function agentBin(opts = {}) {
  * (["acp"] for devin).
  */
 export function agentArgs({ env = process.env } = {}) {
-  if (!env.BRIDGE_AGENT_ARGS) return agentStrategy({ env }).agentArgs({ env });
+  const raw = env.BRIDGE_AGENT_ARGS;
+  if (raw == null) return agentStrategy({ env }).agentArgs({ env });
+  // A set-but-empty value used to read as "unset" and silently fell back
+  // to the strategy argv — a config that wanted zero args got ["acp"]
+  // instead. Empty/whitespace is now an explicit, actionable error;
+  // '[]' is the only way to say zero args.
+  if (!String(raw).trim()) {
+    throw new Error(
+      "BRIDGE_AGENT_ARGS is set but empty — unset it to use the "
+      + 'strategy default (["acp"] for devin), or set \'[]\' for zero args',
+    );
+  }
   let parsed;
   try {
-    parsed = JSON.parse(env.BRIDGE_AGENT_ARGS);
+    parsed = JSON.parse(raw);
   } catch {
     parsed = null;
   }
@@ -217,7 +238,14 @@ export function agentAuthMethod({ env = process.env } = {}) {
   return /^none$/i.test(raw) ? null : raw;
 }
 
-/** Read the session token (devin: windsurf_api_key) from credentials.toml. */
+/**
+ * Read the session token from credentials.toml. The key name is the
+ * selected strategy's `tokenKey` ("windsurf_api_key" for devin) — NOT
+ * env-overridable: when BRIDGE_AGENT_BIN drives a custom agent the
+ * devin strategy still supplies the key, so that agent's
+ * credentials.toml must literally contain `windsurf_api_key = "..."`
+ * (or skip auth with BRIDGE_AGENT_AUTH=none, or pass opts.token).
+ */
 export function readSessionToken() {
   const cred = credentialsPath();
   if (!fs.existsSync(cred)) {
@@ -293,6 +321,15 @@ export class DevinAcp {
     this.child.stdout.on("data", (chunk) => this._onData(chunk));
     this.child.on("exit", (code) => {
       const err = new Error(`agent process exited (code ${code})`);
+      for (const { reject } of this._pending.values()) reject(err);
+      this._pending.clear();
+    });
+    // 'error' fires when the spawn itself fails (e.g. ENOENT on a bad
+    // shebang, EACCES) — without a listener Node crashes the bridge with
+    // "Unhandled 'error' event". Reject pending calls like 'exit' does;
+    // 'exit' still fires afterwards and finds the map already cleared.
+    this.child.on("error", (spawnErr) => {
+      const err = new Error(`agent process failed to spawn: ${spawnErr.message}`);
       for (const { reject } of this._pending.values()) reject(err);
       this._pending.clear();
     });

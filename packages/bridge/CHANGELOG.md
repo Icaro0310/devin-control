@@ -34,6 +34,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   configured credentials path) can no longer smuggle a denied target —
   credential stores included — past an `allow` policy.
 
+### Fixed
+
+- `BRIDGE_AGENT_ARGS` set to an empty or whitespace-only string read as
+  "unset" and silently spawned the agent with the strategy default
+  (`["acp"]` for devin) — a config asking for zero args got a
+  subcommand instead. It is now an explicit, actionable error; `'[]'`
+  is the only spelling of zero args and unset still defaults.
+- A spawn-level failure of the agent process (the ChildProcess `error`
+  event — e.g. ENOENT on a bad shebang or EACCES after resolution)
+  crashed the whole bridge with `Unhandled 'error' event` instead of
+  rejecting the in-flight call. `start()` now attaches an `error`
+  listener that rejects pending calls exactly like `exit` does.
+- Docs: `readSessionToken` and the README now state the real tokenKey
+  behavior — the credentials.toml key name always comes from the
+  selected strategy (`windsurf_api_key` for devin); there is no
+  `BRIDGE_AGENT_TOKEN_KEY` override, so a custom agent driven purely by
+  env must present that key name (or skip auth with
+  `BRIDGE_AGENT_AUTH=none`).
+
 ## [0.1.1] - 2026-10-15
 
 ### Added

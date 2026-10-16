@@ -91,6 +91,54 @@ describe("DevinAcp — prompt", () => {
   });
 });
 
+describe("DevinAcp — subprocess lifecycle failures are controlled", () => {
+  it("an agent that exits mid-call rejects the pending call", async () => {
+    const acp = new DevinAcp({
+      bin: process.execPath,
+      args: ["-e", "setTimeout(() => process.exit(3), 50)"],
+      cwd: FIXTURES,
+      timeoutMs: 5000,
+      token: "t",
+    });
+    acp.start();
+    clients.push(acp);
+    await assert.rejects(acp.call("initialize", {}), /exited \(code 3\)/);
+  });
+
+  it("a spawn-level error rejects pending calls instead of crashing the host", async (t) => {
+    if (process.platform === "win32") {
+      return t.skip("bad-shebang spawn failure is POSIX-specific");
+    }
+    // exec fails at spawn (ENOENT on the interpreter): 'error' fires, not
+    // just 'exit'. Unhandled 'error' on a ChildProcess crashes the process.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "acp-bad-spawn-"));
+    const bad = path.join(dir, "bad-agent.sh");
+    fs.writeFileSync(bad, "#!/nonexistent-interp-xyz\nexit 0\n", { mode: 0o755 });
+    const acp = new DevinAcp({
+      bin: bad, args: [], cwd: dir, timeoutMs: 5000, token: "t",
+    });
+    acp.start();
+    clients.push(acp);
+    await assert.rejects(
+      acp.call("initialize", {}),
+      /failed to spawn|ENOENT|exited/,
+    );
+  });
+
+  it("an agent that never answers initialize rejects on startup timeout", async () => {
+    const acp = new DevinAcp({
+      bin: process.execPath,
+      args: ["-e", "setTimeout(() => {}, 60000)"],
+      cwd: FIXTURES,
+      timeoutMs: 150,
+      token: "t",
+    });
+    acp.start();
+    clients.push(acp);
+    await assert.rejects(acp.init(), /initialize: timeout 150ms/);
+  });
+});
+
 describe("DevinAcp — policy-gated agent requests", () => {
   it("terminal allowed by policy runs and returns output", async () => {
     const acp = await makeClient({
