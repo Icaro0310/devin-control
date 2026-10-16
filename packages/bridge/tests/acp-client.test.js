@@ -181,6 +181,63 @@ describe("DevinAcp — policy-gated agent requests", () => {
   });
 });
 
+describe("DevinAcp — agent auth (BRIDGE_AGENT_AUTH)", () => {
+  function withEnv(vars, fn) {
+    const saved = {};
+    for (const k of Object.keys(vars)) saved[k] = process.env[k];
+    for (const [k, v] of Object.entries(vars)) {
+      if (v === undefined) delete process.env[k]; else process.env[k] = v;
+    }
+    return Promise.resolve().then(fn).finally(() => {
+      for (const [k, v] of Object.entries(saved)) {
+        if (v === undefined) delete process.env[k]; else process.env[k] = v;
+      }
+    });
+  }
+
+  it("devin default still sends devin-browser (agent advertises nothing)", async () => {
+    const acp = await makeClient();
+    await acp.newSession();
+    const res = await acp.prompt("AUTH_STATE");
+    assert.equal(res.text, "AUTH:devin-browser");
+  });
+
+  it("BRIDGE_AGENT_AUTH=none skips authenticate entirely", () =>
+    withEnv({ BRIDGE_AGENT_AUTH: "none" }, async () => {
+      const acp = await makeClient();
+      await acp.newSession();
+      const res = await acp.prompt("AUTH_STATE");
+      assert.equal(res.text, "AUTH:none");
+    }));
+
+  it("an empty advertised authMethods list sends no authenticate", () =>
+    withEnv({ FAKE_ACP_AUTH_METHODS: "[]" }, async () => {
+      const acp = await makeClient();
+      await acp.newSession();
+      const res = await acp.prompt("AUTH_STATE");
+      assert.equal(res.text, "AUTH:none"); // agent supports no auth methods
+    }));
+
+  it("a method the agent does not advertise is never sent", () =>
+    withEnv({ FAKE_ACP_AUTH_METHODS: '[{"id":"acme-auth"}]' }, async () => {
+      const acp = await makeClient();
+      await acp.newSession();
+      const res = await acp.prompt("AUTH_STATE");
+      assert.equal(res.text, "AUTH:none"); // devin-browser not advertised → skipped
+    }));
+
+  it("BRIDGE_AGENT_AUTH picks a method the agent advertises", () =>
+    withEnv({
+      FAKE_ACP_AUTH_METHODS: '[{"id":"acme-auth"}]',
+      BRIDGE_AGENT_AUTH: "acme-auth",
+    }, async () => {
+      const acp = await makeClient();
+      await acp.newSession();
+      const res = await acp.prompt("AUTH_STATE");
+      assert.equal(res.text, "AUTH:acme-auth");
+    }));
+});
+
 describe("maxCostField", () => {
   it("finds the largest numeric cost field anywhere in notifications", () => {
     const notifs = [

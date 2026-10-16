@@ -22,8 +22,8 @@ run a binary planted inside an untrusted repo. The resolver returns only
 absolute spawn targets, and in an untrusted workspace (Restricted Mode)
 it refuses any candidate that resolves inside the repo — the workspace
 can never supply the executable. The same resolver guards the bridge
-CLI's own autodetect of the `devin.exe` agent (`DEVIN_CLI_PATH`, the
-per-user install dir, then `PATH`): a repo-resident agent binary is
+CLI's own autodetect of the agent (`BRIDGE_AGENT_BIN`, `DEVIN_CLI_PATH`,
+the per-user install dir, then `PATH`): a repo-resident agent binary is
 never picked up.
 
 `policy --check` targets always travel as one literal argv element after

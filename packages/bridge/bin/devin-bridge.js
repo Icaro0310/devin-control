@@ -13,7 +13,8 @@
  *   --sessions-file <f>   mapping file (default ./.sessions.json)
  *   --policy <f>          policy file (default ./policy.json if present,
  *                         else the fail-closed built-in: everything asks)
- *   --bin <path>          devin.exe path (default: DEVIN_CLI_PATH/autodetect)
+ *   --bin <path>          agent executable (default: BRIDGE_AGENT_BIN →
+ *                           BRIDGE_AGENT strategy → devin autodetect)
  *   --timeout-ms <n>      per-call timeout (default 300000; prompt waits up to 45min)
  *   --yes                 auto-approve policy "ask" prompts (headless runs)
  *   --label origin:purpose  tag sessions the bridge creates (default
@@ -78,6 +79,12 @@ Commands:
 Options: --sessions-file f --policy f --preset ask|read-only|full
          --bin path --timeout-ms n --yes --help
          --label origin:purpose (default bridge:unlabeled) --state-dir d
+
+Agent env: BRIDGE_AGENT_BIN path — explicit executable (any ACP CLI)
+         BRIDGE_AGENT name — strategy from the registry (default devin)
+         BRIDGE_AGENT_ARGS '["sub","--flags"]' — argv override (JSON array)
+         BRIDGE_AGENT_AUTH id|none — authenticate method ("none" skips it)
+         BRIDGE_CREDENTIALS_PATH file — credentials.toml override
 
 Presets: read-only denies terminal/fsWrite/network (observe-only intake);
 full allows everything — HIGH RISK, trusted scratch environments only.`);

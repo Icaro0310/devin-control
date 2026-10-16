@@ -133,6 +133,41 @@ describe("Policy — fs", () => {
   });
 });
 
+describe("Policy — realpath candidates (symlink evasion)", () => {
+  function trySymlink(target, link) {
+    try { fs.symlinkSync(target, link); return true; }
+    catch { return false; } // Windows may require elevated privileges
+  }
+
+  it("a differently-named symlink to a denied basename is denied via realpath", (t) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "policy-real-"));
+    const real = path.join(dir, "credentials.toml");
+    const link = path.join(dir, "notes.txt");
+    fs.writeFileSync(real, 'windsurf_api_key = "x"\n');
+    if (!trySymlink(real, link)) {
+      return t.skip("symlink creation needs privileges on this platform");
+    }
+    const p = new Policy(
+      { version: 1, fs: { read: { allow: ["**"] } } },
+      { root: dir },
+    );
+    // lexical name matches nothing denied; the realpath candidate does
+    assert.equal(p.checkFsRead(link), "deny");
+    fs.writeFileSync(path.join(dir, "other.txt"), "ok\n");
+    assert.equal(p.checkFsRead(path.join(dir, "other.txt")), "allow");
+  });
+
+  it("a nonexistent path keeps lexical-only candidates and does not throw", () => {
+    const p = new Policy(
+      { version: 1, fs: { read: { allow: ["**"] } } },
+      { root: "/repo" },
+    );
+    assert.equal(p.checkFsRead("/nonexistent/dir/file.txt"), "allow");
+    // lexical matching still applies when realpath cannot resolve
+    assert.equal(p.checkFsRead("/nonexistent/dir/credentials.toml"), "deny");
+  });
+});
+
 describe("Policy — network", () => {
   const policy = Policy.load(`${FIXTURES}/policy-strict.json`);
 
