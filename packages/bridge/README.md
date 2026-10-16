@@ -58,14 +58,18 @@ policy contract.
   agent's config; this one gates `terminal/*`, `fs/*` and
   `session/request_permission` through a per-repo `policy.json`
   (allow/deny/ask, deny-wins, fail-closed by default).
-- **No-Devin:** pointless without it — transport is `devin.exe acp`,
-  auth is the IDE's `windsurf_api_key` from `credentials.toml` (no PKCE
-  login), sessions show up grouped by repo in Devin Desktop.
-- **One sentence:** *drive Devin from the outside, with a seatbelt.*
+- **Devin is the default agent, not the only one:** `BRIDGE_AGENT_BIN`
+  points the bridge at any ACP-speaking CLI (see `BRIDGE_AGENT*` below).
+  With the default `devin` strategy, auth is the IDE's `windsurf_api_key`
+  from `credentials.toml` (no PKCE login) and sessions show up grouped by
+  repo in Devin Desktop.
+- **One sentence:** *drive an ACP agent from the outside, with a seatbelt.*
 
 ## Install
 
-Requires Node.js ≥ 20, Git, and an authenticated Devin CLI/Desktop install.
+Requires Node.js ≥ 20 and Git. The default `devin` strategy also needs an
+authenticated Devin CLI/Desktop install; other agents need only their own
+CLI on PATH (plus `BRIDGE_AGENT_BIN`/`BRIDGE_AGENT_AUTH` as appropriate).
 
 ```bash
 npm install -g @icaro0310/devin-bridge
