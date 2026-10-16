@@ -240,6 +240,23 @@ test("BRIDGE_AGENT_ARGS rejects non-array JSON and invalid JSON", () => {
   }
 });
 
+// Regression: a set-but-empty BRIDGE_AGENT_ARGS read as "unset" and
+// silently spawned the agent with the devin default ["acp"] — a config
+// asking for zero args got a subcommand instead. Empty and
+// whitespace-only values now fail with an actionable error; '[]' is
+// the only spelling of zero args.
+test("BRIDGE_AGENT_ARGS='' or whitespace-only fails loudly instead of using the default", () => {
+  for (const bad of ["", "   ", " \t\n "]) {
+    assert.throws(
+      () => agentArgs({ env: { BRIDGE_AGENT_ARGS: bad } }),
+      /BRIDGE_AGENT_ARGS is set but empty.*\[\]/s,
+      `expected empty-ish ${JSON.stringify(bad)} to throw`,
+    );
+  }
+  assert.deepEqual(agentArgs({ env: { BRIDGE_AGENT_ARGS: "[]" } }), []);
+  assert.deepEqual(agentArgs({ env: {} }), ["acp"]); // unset still defaults
+});
+
 test("agentAuthMethod: devin default, override, and none", () => {
   assert.equal(agentAuthMethod({ env: {} }), "devin-browser");
   assert.equal(agentAuthMethod({ env: { BRIDGE_AGENT_AUTH: "acme-auth" } }), "acme-auth");

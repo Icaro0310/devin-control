@@ -246,7 +246,10 @@ Options: --sessions-file f  --policy f  --bin path  --timeout-ms n  --yes
   default `devin` strategy is `DEVIN_CLI_PATH` →
   `%LOCALAPPDATA%\Programs\Devin\...\devin.exe` → PATH).
   `BRIDGE_AGENT_ARGS` overrides the spawn argv (JSON array, default
-  `["acp"]`); `BRIDGE_AGENT_AUTH` overrides the `authenticate`
+  `["acp"]`; `'[]'` selects zero args while a set-but-empty or
+  whitespace-only value is an explicit error — it must not silently
+  fall back to the strategy default); `BRIDGE_AGENT_AUTH` overrides the
+  `authenticate`
   methodId (`none` skips it; an agent-advertised `authMethods` list is
   honoured — unsupported methods are not sent);
   `BRIDGE_CREDENTIALS_PATH` overrides the credentials.toml path before
