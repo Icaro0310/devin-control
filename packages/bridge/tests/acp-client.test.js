@@ -210,6 +210,14 @@ describe("DevinAcp — agent auth (BRIDGE_AGENT_AUTH)", () => {
       assert.equal(res.text, "AUTH:none");
     }));
 
+  it("an empty advertised authMethods list sends no authenticate", () =>
+    withEnv({ FAKE_ACP_AUTH_METHODS: "[]" }, async () => {
+      const acp = await makeClient();
+      await acp.newSession();
+      const res = await acp.prompt("AUTH_STATE");
+      assert.equal(res.text, "AUTH:none"); // agent supports no auth methods
+    }));
+
   it("a method the agent does not advertise is never sent", () =>
     withEnv({ FAKE_ACP_AUTH_METHODS: '[{"id":"acme-auth"}]' }, async () => {
       const acp = await makeClient();

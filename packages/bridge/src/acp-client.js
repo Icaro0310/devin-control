@@ -492,10 +492,12 @@ export class DevinAcp {
     if (method !== null) {
       // ACP negotiation: an agent that advertises `authMethods` is only
       // sent a method it supports — anything else is skipped rather than
-      // an unsupported call. An agent that advertises none (the Devin
-      // CLI) gets the configured method unconditionally.
-      const offered = res?.authMethods || [];
-      if (!offered.length
+      // an unsupported call. An agent that does not advertise the field
+      // at all (the Devin CLI) gets the configured method
+      // unconditionally; an empty advertised list means the agent
+      // supports no auth methods — skip the call entirely.
+      const offered = res?.authMethods;
+      if (offered == null
           || offered.some((m) => (m.id || m.methodId) === method)) {
         const apiKey = this._token || readSessionToken();
         await this.call("authenticate", {
