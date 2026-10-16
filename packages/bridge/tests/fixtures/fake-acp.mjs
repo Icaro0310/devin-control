@@ -13,7 +13,11 @@
  *                          echoes WRITE_OK or WRITE_ERR:<msg>
  *   "COST <n>"             emits a notification containing creditCost <n>
  *   "DUMP_SESSION_NEW"     replies NEW_PARAMS:<json of last session/new params>
- *   anything else          replies "echo: <text>"
+ *   "AUTH_STATE"           replies AUTH:<methodId|none> — the methodId the
+ *                          last authenticate used, "none" if never called
+ *
+ * Env: FAKE_ACP_AUTH_METHODS — JSON array of {id} auth methods advertised
+ * in the initialize result (tests ACP auth negotiation).
  */
 
 import readline from "node:readline";
@@ -22,6 +26,16 @@ const pending = new Map();
 let nextId = 1000;
 let model = "swe-2";
 let lastSessionNewParams = null;
+let lastAuthMethod = null;
+
+let advertisedAuth = null;
+try {
+  advertisedAuth = process.env.FAKE_ACP_AUTH_METHODS
+    ? JSON.parse(process.env.FAKE_ACP_AUTH_METHODS)
+    : null;
+} catch {
+  advertisedAuth = null;
+}
 
 const MODEL_OPT = () => ({
   id: "model",
@@ -139,6 +153,9 @@ async function runPrompt(id, params) {
     if (text === "DUMP_SESSION_NEW") {
       return finish(id, `NEW_PARAMS:${JSON.stringify(lastSessionNewParams)}`);
     }
+    if (text === "AUTH_STATE") {
+      return finish(id, `AUTH:${lastAuthMethod ?? "none"}`);
+    }
     return finish(id, `echo: ${text}`);
   } catch (e) {
     respond(id, null, { code: -32603, message: String(e.message || e) });
@@ -159,8 +176,13 @@ readline.createInterface({ input: process.stdin }).on("line", (line) => {
   if (msg.id === undefined || !msg.method) return; // notification from client
   switch (msg.method) {
     case "initialize":
-      return respond(msg.id, { protocolVersion: 1, agentCapabilities: { loadSession: true } });
+      return respond(msg.id, {
+        protocolVersion: 1,
+        agentCapabilities: { loadSession: true },
+        ...(advertisedAuth ? { authMethods: advertisedAuth } : {}),
+      });
     case "authenticate":
+      lastAuthMethod = msg.params?.methodId || "?";
       return respond(msg.id, {});
     case "session/new":
       lastSessionNewParams = msg.params || {};

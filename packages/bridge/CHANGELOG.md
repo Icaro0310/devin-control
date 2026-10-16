@@ -14,11 +14,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   named strategy registry (`AGENT_STRATEGIES`) plus env overrides —
   `BRIDGE_AGENT` (strategy name), `BRIDGE_AGENT_BIN` (explicit executable,
   the generic escape hatch for any ACP-compatible CLI),
-  `BRIDGE_AGENT_ARGS` (JSON array argv override) and
+  `BRIDGE_AGENT_ARGS` (JSON array argv override),
+  `BRIDGE_AGENT_AUTH` (`authenticate` methodId override; `none` skips
+  it, and an agent-advertised `authMethods` list is honoured — methods
+  the agent does not offer are never sent) and
   `BRIDGE_CREDENTIALS_PATH` (credentials.toml override).
   `DEVIN_CREDENTIALS_PATH`/`DEVIN_CLI_PATH` keep working as back-compat
   fallbacks; the `devin` strategy and the default resolution order are
   unchanged.
+
+### Security
+
+- The resolved credentials file is pinned into the policy's fs-read deny
+  set whatever the rules allow — a custom `BRIDGE_CREDENTIALS_PATH` can
+  sit outside the built-in credential-store basenames and still cannot
+  be read back by an agent.
 
 ## [0.1.1] - 2026-10-15
 

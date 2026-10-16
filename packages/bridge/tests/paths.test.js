@@ -5,8 +5,9 @@ import path from "node:path";
 import test from "node:test";
 import {
   credentialsPath, devinBin, devinBinCandidates,
-  agentArgs, agentBin, agentBinCandidates, agentStrategy, DevinAcp,
+  agentArgs, agentAuthMethod, agentBin, agentBinCandidates, agentStrategy, DevinAcp,
 } from "../src/acp-client.js";
+import { Policy } from "../src/policy.js";
 
 // PATHEXT on Windows never matches a bare extensionless file — fixtures
 // carry the real executable suffix (".EXE", matching PATHEXT's case so
@@ -236,6 +237,42 @@ test("BRIDGE_AGENT_ARGS rejects non-array JSON and invalid JSON", () => {
       () => agentArgs({ env: { BRIDGE_AGENT_ARGS: bad } }),
       /BRIDGE_AGENT_ARGS must be a JSON array of strings/,
     );
+  }
+});
+
+test("agentAuthMethod: devin default, override, and none", () => {
+  assert.equal(agentAuthMethod({ env: {} }), "devin-browser");
+  assert.equal(agentAuthMethod({ env: { BRIDGE_AGENT_AUTH: "acme-auth" } }), "acme-auth");
+  assert.equal(agentAuthMethod({ env: { BRIDGE_AGENT_AUTH: "none" } }), null);
+  assert.equal(agentAuthMethod({ env: { BRIDGE_AGENT_AUTH: "NONE" } }), null);
+});
+
+// SEC: a BRIDGE_CREDENTIALS_PATH outside the built-in credential-store
+// basenames must still be denied to the agent — the resolved path is
+// pinned into the policy's deny set whatever the rules allow.
+test("the resolved credentials path is always denied to agent fs reads", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "creds-deny-"));
+  const creds = path.join(dir, "agent-secrets.toml"); // not a built-in deny basename
+  fs.writeFileSync(creds, 'windsurf_api_key = "x"\n');
+  const saved = process.env.BRIDGE_CREDENTIALS_PATH;
+  process.env.BRIDGE_CREDENTIALS_PATH = creds;
+  try {
+    const acp = new DevinAcp({
+      bin: process.execPath,
+      args: [],
+      cwd: dir,
+      policy: new Policy(
+        { version: 1, fs: { read: { allow: ["**"] } } },
+        { root: dir },
+      ),
+      token: "t",
+    });
+    assert.equal(acp.policy.checkFsRead(creds), "deny");
+    // deny is scoped to the file itself, not its directory
+    assert.equal(acp.policy.checkFsRead(path.join(dir, "other.txt")), "allow");
+  } finally {
+    if (saved === undefined) delete process.env.BRIDGE_CREDENTIALS_PATH;
+    else process.env.BRIDGE_CREDENTIALS_PATH = saved;
   }
 });
 

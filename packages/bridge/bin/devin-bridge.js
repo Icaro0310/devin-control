@@ -83,6 +83,7 @@ Options: --sessions-file f --policy f --preset ask|read-only|full
 Agent env: BRIDGE_AGENT_BIN path — explicit executable (any ACP CLI)
          BRIDGE_AGENT name — strategy from the registry (default devin)
          BRIDGE_AGENT_ARGS '["sub","--flags"]' — argv override (JSON array)
+         BRIDGE_AGENT_AUTH id|none — authenticate method ("none" skips it)
          BRIDGE_CREDENTIALS_PATH file — credentials.toml override
 
 Presets: read-only denies terminal/fsWrite/network (observe-only intake);

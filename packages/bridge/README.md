@@ -96,22 +96,36 @@ Everything per-agent lives in a strategy registry (`AGENT_STRATEGIES` in
 | `BRIDGE_AGENT` | strategy name from the registry (default `devin`; unknown names fail fast) |
 | `BRIDGE_AGENT_BIN` | explicit agent executable — the generic escape hatch for any ACP CLI |
 | `BRIDGE_AGENT_ARGS` | JSON array argv override (default: the strategy's, `["acp"]` for devin) |
+| `BRIDGE_AGENT_AUTH` | `authenticate` methodId override; `none` skips the call (default: the strategy's, `devin-browser` for devin) |
 | `BRIDGE_CREDENTIALS_PATH` | credentials.toml override for any strategy |
 
 Resolution order — executable: `BRIDGE_AGENT_BIN` → the selected
-strategy's candidates → the `devin` default (`DEVIN_CLI_PATH` → install
-dir → `devin` on `PATH`). Credentials: `BRIDGE_CREDENTIALS_PATH` →
-`DEVIN_CREDENTIALS_PATH` → the strategy's platform default. `--bin` beats
-all env config. To drive a non-Devin ACP CLI without touching code:
+strategy's candidates (`BRIDGE_AGENT`, default `devin`:
+`DEVIN_CLI_PATH` → install dir → `devin` on `PATH`). A selected strategy
+is used as-is — there is no fallback across strategies. Credentials:
+`BRIDGE_CREDENTIALS_PATH` → `DEVIN_CREDENTIALS_PATH` → the strategy's
+platform default. `--bin` beats all env config. To drive a non-Devin ACP
+CLI without touching code:
 
 ```bash
 export BRIDGE_AGENT_BIN=/opt/my-agent/bin/cli
 export BRIDGE_AGENT_ARGS='["--acp"]'        # argv that enters ACP mode
+export BRIDGE_AGENT_AUTH=none               # skip authenticate, or a methodId it advertises
 export BRIDGE_CREDENTIALS_PATH=/etc/my-agent/credentials.toml
 ```
 
+Auth: `init` sends one `authenticate` call with `_meta.api_key` from the
+session token (`--token`/credentials file). When the agent advertises
+`authMethods`, only an advertised method is sent — a configured method
+it does not offer is skipped, and `BRIDGE_AGENT_AUTH=none` disables the
+call for agents that need no handshake. Agents requiring interactive or
+multi-step auth flows are out of scope; the token still comes from the
+strategy's credentials file (`tokenKey`), so pass an explicit token for
+agents whose secrets live elsewhere.
+
 To support one natively (own install-path candidates, credential
-location, default argv), add a named entry to `AGENT_STRATEGIES`.
+location, default argv, auth method), add a named entry to
+`AGENT_STRATEGIES`.
 
 ## Usage
 

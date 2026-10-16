@@ -23,6 +23,9 @@
  *                           before the strategy's candidates
  *   BRIDGE_AGENT_ARGS       JSON array argv override (default: the
  *                           strategy's own argv, e.g. ["acp"])
+ *   BRIDGE_AGENT_AUTH       authenticate methodId override — "none"
+ *                           skips authenticate (default: the
+ *                           strategy's, "devin-browser" for devin)
  *   BRIDGE_CREDENTIALS_PATH credentials.toml override (any strategy)
  *   DEVIN_CLI_PATH          devin strategy: Devin CLI executable
  *                           (auto-detected from PATH)
@@ -101,6 +104,7 @@ export function devinBinCandidates({
  *   credentialsPath({platform, env, home}) → default credentials.toml
  *     location for the strategy.
  *   agentArgs({env}) → argv that puts the binary in ACP mode.
+ *   authMethod → ACP `authenticate` methodId sent during init.
  *   tokenKey → credentials.toml key holding the session token sent as
  *     `authenticate` `_meta.api_key`.
  *
@@ -113,6 +117,7 @@ export const AGENT_STRATEGIES = {
     binCandidates: devinBinCandidates,
     credentialsPath: devinCredentialsPath,
     agentArgs: () => ["acp"],
+    authMethod: "devin-browser",
     tokenKey: "windsurf_api_key",
   },
 };
@@ -198,6 +203,20 @@ export function agentArgs({ env = process.env } = {}) {
   return parsed;
 }
 
+/**
+ * The `authenticate` methodId to send during init: BRIDGE_AGENT_AUTH
+ * overrides (the literal value "none" disables authenticate entirely —
+ * for agents that need no auth handshake); otherwise the selected
+ * strategy decides ("devin-browser" for devin). Returns null to skip.
+ */
+export function agentAuthMethod({ env = process.env } = {}) {
+  const raw = env.BRIDGE_AGENT_AUTH;
+  if (raw === undefined || raw === "") {
+    return agentStrategy({ env }).authMethod ?? null;
+  }
+  return /^none$/i.test(raw) ? null : raw;
+}
+
 /** Read the session token (devin: windsurf_api_key) from credentials.toml. */
 export function readSessionToken() {
   const cred = credentialsPath();
@@ -248,6 +267,11 @@ export class DevinAcp {
     this.binArgv = spec.argv;
     this.args = args !== undefined ? args : agentArgs();
     this.policy = policy || Policy.default({ root: this.cwd });
+    // The credentials file the bridge authenticates with is denied to
+    // the agent no matter what the policy says — a custom
+    // BRIDGE_CREDENTIALS_PATH can sit outside the built-in
+    // credential-store basenames the policy already denies.
+    this.policy.denyFsReadPath(credentialsPath());
     this.askHandler = askHandler || null;
     this._token = token || null;
     this.timeoutMs = Number(timeoutMs || process.env.ACP_TIMEOUT_MS || 300000);
@@ -460,15 +484,26 @@ export class DevinAcp {
   }
 
   async init() {
-    await this.call("initialize", {
+    const res = await this.call("initialize", {
       protocolVersion: 1,
       clientCapabilities: { fs: { readTextFile: true, writeTextFile: true }, terminal: true },
     });
-    const apiKey = this._token || readSessionToken();
-    await this.call("authenticate", {
-      methodId: "devin-browser",
-      _meta: { api_key: apiKey },
-    });
+    const method = agentAuthMethod();
+    if (method !== null) {
+      // ACP negotiation: an agent that advertises `authMethods` is only
+      // sent a method it supports — anything else is skipped rather than
+      // an unsupported call. An agent that advertises none (the Devin
+      // CLI) gets the configured method unconditionally.
+      const offered = res?.authMethods || [];
+      if (!offered.length
+          || offered.some((m) => (m.id || m.methodId) === method)) {
+        const apiKey = this._token || readSessionToken();
+        await this.call("authenticate", {
+          methodId: method,
+          _meta: { api_key: apiKey },
+        });
+      }
+    }
     return this;
   }
 

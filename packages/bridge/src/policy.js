@@ -132,6 +132,7 @@ export class Policy {
     }
     this.root = path.resolve(root).replace(/\\/g, "/");
     const caseSensitive = platform !== "win32";
+    this._fsCaseSensitive = caseSensitive;
 
     const defaults = { ...(doc.defaults || {}) };
     for (const cap of CAPABILITIES) {
@@ -216,6 +217,21 @@ export class Policy {
 
   checkFsRead(p) {
     return this._decide(this._rules.fsRead, fsCandidates(p, this.root), this.defaults.fsRead);
+  }
+
+  /**
+   * Deny reads of one exact path no matter what the rules say — used for
+   * the resolved credentials file, which a custom BRIDGE_CREDENTIALS_PATH
+   * can place outside the built-in credential-store basenames.
+   */
+  denyFsReadPath(p) {
+    const abs = normalizeFsPath(p, this.root);
+    const re = new RegExp(
+      `^${abs.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
+      this._fsCaseSensitive ? "" : "i",
+    );
+    this._rules.fsRead.deny.push(re);
+    return this;
   }
 
   checkFsWrite(p) {
