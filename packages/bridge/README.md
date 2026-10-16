@@ -81,9 +81,37 @@ npm install -g .
 
 The bridge reads `windsurf_api_key` from `%APPDATA%\\devin\\credentials.toml`
 on Windows and `$XDG_DATA_HOME/devin/credentials.toml` on Linux (normally
-`~/.local/share/devin/credentials.toml`). Override with `DEVIN_CREDENTIALS_PATH`;
-the Devin CLI is resolved from `PATH` or `DEVIN_CLI_PATH`. The token is never
-logged or persisted.
+`~/.local/share/devin/credentials.toml`). Override with `BRIDGE_CREDENTIALS_PATH`
+(`DEVIN_CREDENTIALS_PATH` still works); the Devin CLI is resolved from `PATH`,
+`DEVIN_CLI_PATH` or `BRIDGE_AGENT_BIN`. The token is never logged or persisted.
+
+### Choosing the agent (`BRIDGE_AGENT*`)
+
+The bridge speaks generic ACP; the Devin CLI is just the default agent.
+Everything per-agent lives in a strategy registry (`AGENT_STRATEGIES` in
+`src/acp-client.js`) plus env overrides:
+
+| Env | Meaning |
+| --- | --- |
+| `BRIDGE_AGENT` | strategy name from the registry (default `devin`; unknown names fail fast) |
+| `BRIDGE_AGENT_BIN` | explicit agent executable — the generic escape hatch for any ACP CLI |
+| `BRIDGE_AGENT_ARGS` | JSON array argv override (default: the strategy's, `["acp"]` for devin) |
+| `BRIDGE_CREDENTIALS_PATH` | credentials.toml override for any strategy |
+
+Resolution order — executable: `BRIDGE_AGENT_BIN` → the selected
+strategy's candidates → the `devin` default (`DEVIN_CLI_PATH` → install
+dir → `devin` on `PATH`). Credentials: `BRIDGE_CREDENTIALS_PATH` →
+`DEVIN_CREDENTIALS_PATH` → the strategy's platform default. `--bin` beats
+all env config. To drive a non-Devin ACP CLI without touching code:
+
+```bash
+export BRIDGE_AGENT_BIN=/opt/my-agent/bin/cli
+export BRIDGE_AGENT_ARGS='["--acp"]'        # argv that enters ACP mode
+export BRIDGE_CREDENTIALS_PATH=/etc/my-agent/credentials.toml
+```
+
+To support one natively (own install-path candidates, credential
+location, default argv), add a named entry to `AGENT_STRATEGIES`.
 
 ## Usage
 
@@ -155,7 +183,7 @@ Named presets (`--preset`, or `policy --init --preset <name>`):
 devin-bridge *is* the Devin-only path: it drives `devin acp` directly using
 the `credentials.toml` the Devin CLI already stores — no second runtime, no
 message broker, no extra API key. Requirements are just Node.js >= 20 and a
-signed-in Devin CLI (`devin` on PATH or `DEVIN_CLI_PATH`). The permission
+signed-in Devin CLI (`devin` on PATH, `DEVIN_CLI_PATH` or `BRIDGE_AGENT_BIN`). The permission
 policy is fail-closed by default: anything not explicitly allowed is denied,
 and credentials are never logged or persisted.
 
@@ -191,7 +219,8 @@ configOptions); exit code 1 on failure. This is the foundation for
   of the Devin CLI; both may change without notice (tested against Devin CLI
   3000.10.x).
 - Windows and Linux are supported. The executable and credentials file are
-  resolved per OS; use `DEVIN_CLI_PATH` and `DEVIN_CREDENTIALS_PATH` to override.
+  resolved per OS; use `BRIDGE_AGENT_BIN`/`DEVIN_CLI_PATH` and
+  `BRIDGE_CREDENTIALS_PATH`/`DEVIN_CREDENTIALS_PATH` to override.
 - `session/load` cannot steal a session open elsewhere — it fails
   `session_locked` and the dispatcher falls back to `session/new`.
 - Does not expose agent-side MCP servers (`mcpServers: []` is sent).
@@ -222,7 +251,7 @@ real stdio — no Devin CLI binary or credentials are needed.
 
 **How do I script Devin sessions without auto-approving every permission?** Run `devin-bridge policy --init`, then `devin-bridge new "<repo>"` and `devin-bridge prompt "<repo>" "..."`. Every `terminal/*`, `fs/*` and permission request passes through your `policy.json` — anything not explicitly allowed is denied, and `ask` decisions prompt interactively only on a TTY.
 
-**What does devin-bridge need to authenticate?** Nothing extra. It reads `windsurf_api_key` from the Devin CLI's existing `credentials.toml` (`%APPDATA%\devin\` on Windows, `$XDG_DATA_HOME/devin/` on Linux) and resolves the CLI from `PATH` or `DEVIN_CLI_PATH`. The token is never logged or persisted.
+**What does devin-bridge need to authenticate?** Nothing extra. It reads `windsurf_api_key` from the Devin CLI's existing `credentials.toml` (`%APPDATA%\devin\` on Windows, `$XDG_DATA_HOME/devin/` on Linux) and resolves the CLI from `PATH`, `DEVIN_CLI_PATH` or `BRIDGE_AGENT_BIN`. The token is never logged or persisted.
 
 **Is devin-bridge safe to run unattended?** Safer than auto-approving snippets, with caveats. The default is fail-closed: unknown requests are denied, and non-interactive runs stay closed unless `--yes` is passed. It still depends on undocumented `acp` mode internals, so pin a tested Devin CLI version.
 

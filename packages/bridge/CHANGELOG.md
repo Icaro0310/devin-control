@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Configurable ACP agent resolver (`src/acp-client.js`): the agent
+  executable, spawn argv and credentials path are now selected through a
+  named strategy registry (`AGENT_STRATEGIES`) plus env overrides —
+  `BRIDGE_AGENT` (strategy name), `BRIDGE_AGENT_BIN` (explicit executable,
+  the generic escape hatch for any ACP-compatible CLI),
+  `BRIDGE_AGENT_ARGS` (JSON array argv override) and
+  `BRIDGE_CREDENTIALS_PATH` (credentials.toml override).
+  `DEVIN_CREDENTIALS_PATH`/`DEVIN_CLI_PATH` keep working as back-compat
+  fallbacks; the `devin` strategy and the default resolution order are
+  unchanged.
+
 ## [0.1.1] - 2026-10-15
 
 ### Added

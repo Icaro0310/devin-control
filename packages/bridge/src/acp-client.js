@@ -16,8 +16,18 @@
  * requires asking; headless asks deny). See src/policy.js.
  *
  * Env:
- *   DEVIN_CLI_PATH          Devin CLI executable (auto-detected from PATH)
- *   DEVIN_CREDENTIALS_PATH  credentials.toml override
+ *   BRIDGE_AGENT            agent strategy name (default "devin";
+ *                           see AGENT_STRATEGIES)
+ *   BRIDGE_AGENT_BIN        explicit agent executable — the generic
+ *                           escape hatch for any ACP CLI; checked
+ *                           before the strategy's candidates
+ *   BRIDGE_AGENT_ARGS       JSON array argv override (default: the
+ *                           strategy's own argv, e.g. ["acp"])
+ *   BRIDGE_CREDENTIALS_PATH credentials.toml override (any strategy)
+ *   DEVIN_CLI_PATH          devin strategy: Devin CLI executable
+ *                           (auto-detected from PATH)
+ *   DEVIN_CREDENTIALS_PATH  legacy credentials override — kept for
+ *                           back-compat; BRIDGE_CREDENTIALS_PATH wins
  *   ACP_TIMEOUT_MS          per-call timeout (default 300000)
  */
 
@@ -37,12 +47,8 @@ import { Policy } from "./policy.js";
 const require = createRequire(import.meta.url);
 const { resolveSafeExecutable } = require("./safe-executable.cjs");
 
-export function credentialsPath({
-  platform = process.platform,
-  env = process.env,
-  home = os.homedir(),
-} = {}) {
-  if (env.DEVIN_CREDENTIALS_PATH) return path.resolve(env.DEVIN_CREDENTIALS_PATH);
+/** devin strategy: platform default for <data>/devin/credentials.toml. */
+function devinCredentialsPath({ platform, env, home }) {
   if (platform === "win32") {
     const appdata = env.APPDATA || path.join(home, "AppData", "Roaming");
     return path.join(appdata, "devin", "credentials.toml");
@@ -52,6 +58,18 @@ export function credentialsPath({
   }
   const dataHome = env.XDG_DATA_HOME || path.join(home, ".local", "share");
   return path.join(dataHome, "devin", "credentials.toml");
+}
+
+export function credentialsPath({
+  platform = process.platform,
+  env = process.env,
+  home = os.homedir(),
+} = {}) {
+  // Generic override first; the Devin-specific env stays as a
+  // back-compat fallback; otherwise the selected strategy decides.
+  if (env.BRIDGE_CREDENTIALS_PATH) return path.resolve(env.BRIDGE_CREDENTIALS_PATH);
+  if (env.DEVIN_CREDENTIALS_PATH) return path.resolve(env.DEVIN_CREDENTIALS_PATH);
+  return agentStrategy({ env }).credentialsPath({ platform, env, home });
 }
 
 export function devinBinCandidates({
@@ -74,8 +92,62 @@ export function devinBinCandidates({
 }
 
 /**
- * Autodetect the Devin CLI agent binary. Candidate precedence is
- * unchanged (DEVIN_CLI_PATH → per-user install dir → PATH basename), but
+ * Agent strategies — everything the bridge needs to know about an
+ * ACP-compatible CLI, in one named entry:
+ *
+ *   binCandidates({platform, env, home}) → candidate executables, in
+ *     precedence order (each resolves through the safe-executable
+ *     helper — see agentBin).
+ *   credentialsPath({platform, env, home}) → default credentials.toml
+ *     location for the strategy.
+ *   agentArgs({env}) → argv that puts the binary in ACP mode.
+ *   tokenKey → credentials.toml key holding the session token sent as
+ *     `authenticate` `_meta.api_key`.
+ *
+ * BRIDGE_AGENT selects the entry (default "devin"). To support another
+ * ACP CLI, add a strategy here — or skip the registry entirely and point
+ * BRIDGE_AGENT_BIN/BRIDGE_AGENT_ARGS/BRIDGE_CREDENTIALS_PATH at it.
+ */
+export const AGENT_STRATEGIES = {
+  devin: {
+    binCandidates: devinBinCandidates,
+    credentialsPath: devinCredentialsPath,
+    agentArgs: () => ["acp"],
+    tokenKey: "windsurf_api_key",
+  },
+};
+
+/** Resolve the configured agent strategy; unknown names fail fast. */
+export function agentStrategy({ env = process.env } = {}) {
+  const name = env.BRIDGE_AGENT || "devin";
+  const strategy = AGENT_STRATEGIES[name];
+  if (!strategy) {
+    throw new Error(
+      `unknown BRIDGE_AGENT "${name}" — known strategies: ${Object.keys(AGENT_STRATEGIES).join(", ")}`,
+    );
+  }
+  return { name, ...strategy };
+}
+
+/**
+ * Candidate executables for the configured agent, in order:
+ * BRIDGE_AGENT_BIN (explicit escape hatch) → the selected strategy's
+ * candidates (BRIDGE_AGENT, default "devin").
+ */
+export function agentBinCandidates({
+  platform = process.platform,
+  env = process.env,
+  home = os.homedir(),
+} = {}) {
+  const candidates = [];
+  if (env.BRIDGE_AGENT_BIN) candidates.push(env.BRIDGE_AGENT_BIN);
+  candidates.push(...agentStrategy({ env }).binCandidates({ platform, env, home }));
+  return candidates;
+}
+
+/**
+ * Autodetect an agent binary. Candidate precedence is
+ * unchanged (env override → per-user install dir → PATH basename), but
  * each candidate resolves through the shared safe-executable helper: a
  * manual PATH walk that never touches cwd and always returns an absolute
  * spawn target {file, argv}. The workspace is untrusted input by
@@ -85,10 +157,10 @@ export function devinBinCandidates({
  * the walked PATH (a caller carrying its own environment gets its own
  * resolution). Returns the spec or null.
  */
-export function devinBin(opts = {}) {
+function resolveBin(candidates, opts = {}) {
   const workspaceDir = "workspaceDir" in opts ? opts.workspaceDir : process.cwd();
   const trusted = opts.trusted === true;
-  for (const candidate of devinBinCandidates(opts)) {
+  for (const candidate of candidates) {
     const spec = resolveSafeExecutable(candidate, {
       workspaceDir, trusted, npmPackage: null, env: opts.env,
     });
@@ -97,14 +169,44 @@ export function devinBin(opts = {}) {
   return null;
 }
 
-/** Read windsurf_api_key from %APPDATA%\devin\credentials.toml (IDE session token). */
+/** Devin CLI candidates only (the `devin` strategy); prefer agentBin. */
+export function devinBin(opts = {}) {
+  return resolveBin(devinBinCandidates(opts), opts);
+}
+
+/** The configured agent: BRIDGE_AGENT_BIN → BRIDGE_AGENT strategy → devin. */
+export function agentBin(opts = {}) {
+  return resolveBin(agentBinCandidates(opts), opts);
+}
+
+/**
+ * argv that puts the agent binary in ACP mode: BRIDGE_AGENT_ARGS (a JSON
+ * array of strings) overrides; otherwise the selected strategy decides
+ * (["acp"] for devin).
+ */
+export function agentArgs({ env = process.env } = {}) {
+  if (!env.BRIDGE_AGENT_ARGS) return agentStrategy({ env }).agentArgs({ env });
+  let parsed;
+  try {
+    parsed = JSON.parse(env.BRIDGE_AGENT_ARGS);
+  } catch {
+    parsed = null;
+  }
+  if (!Array.isArray(parsed) || parsed.some((a) => typeof a !== "string")) {
+    throw new Error('BRIDGE_AGENT_ARGS must be a JSON array of strings (e.g. \'["acp"]\')');
+  }
+  return parsed;
+}
+
+/** Read the session token (devin: windsurf_api_key) from credentials.toml. */
 export function readSessionToken() {
   const cred = credentialsPath();
   if (!fs.existsSync(cred)) {
-    throw new Error(`credentials.toml not found at ${cred} — sign in to Devin Desktop first`);
+    throw new Error(`credentials.toml not found at ${cred} — sign in to Devin Desktop first (or set BRIDGE_CREDENTIALS_PATH)`);
   }
-  const m = /windsurf_api_key\s*=\s*"([^"]+)"/.exec(fs.readFileSync(cred, "utf8"));
-  if (!m) throw new Error("windsurf_api_key missing from credentials.toml");
+  const key = agentStrategy().tokenKey || "windsurf_api_key";
+  const m = new RegExp(`${key}\\s*=\\s*"([^"]+)"`).exec(fs.readFileSync(cred, "utf8"));
+  if (!m) throw new Error(`${key} missing from credentials.toml`);
   return m[1];
 }
 
@@ -115,8 +217,11 @@ export function readSessionToken() {
 export class DevinAcp {
   /**
    * @param {object} opts
-   * @param {string} opts.bin        executable (default: auto-detected devin.exe)
-   * @param {string[]} opts.args     argv (default ["acp"]; tests pass a fixture script)
+   * @param {string} opts.bin        executable (default: agentBin() — BRIDGE_AGENT_BIN,
+   *                                 BRIDGE_AGENT strategy, else the devin autodetect)
+   * @param {string[]} opts.args     argv (default: agentArgs() — BRIDGE_AGENT_ARGS,
+   *                                 else the strategy's, ["acp"] for devin; tests
+   *                                 pass a fixture script)
    * @param {string} opts.cwd        working dir → also the session cwd default
    * @param {Policy} opts.policy     permission policy (default: fail-closed)
    * @param {Function} opts.askHandler  async ({capability, reason, params}) => "allow"|"deny"
@@ -126,16 +231,22 @@ export class DevinAcp {
    * @param {Function} opts.onNotification  (msg) => void, surfaces every agent notification
    */
   constructor({
-    bin, args = ["acp"], cwd, policy, askHandler, token, timeoutMs, onNotification,
+    bin, args, cwd, policy, askHandler, token, timeoutMs, onNotification,
   } = {}) {
     this.cwd = cwd || process.cwd();
     const spec = bin
       ? resolveSafeExecutable(bin, { workspaceDir: this.cwd, trusted: true })
-      : devinBin({ workspaceDir: this.cwd });
-    if (!spec) throw new Error("Devin CLI not found (set DEVIN_CLI_PATH)");
+      : agentBin({ workspaceDir: this.cwd });
+    if (!spec) {
+      const strat = agentStrategy();
+      throw new Error(
+        `ACP agent executable not found (strategy "${strat.name}") — set BRIDGE_AGENT_BIN`
+        + `${strat.name === "devin" ? " or DEVIN_CLI_PATH" : ""}, or pass opts.bin`,
+      );
+    }
     this.bin = spec.file;
     this.binArgv = spec.argv;
-    this.args = args;
+    this.args = args !== undefined ? args : agentArgs();
     this.policy = policy || Policy.default({ root: this.cwd });
     this.askHandler = askHandler || null;
     this._token = token || null;
@@ -157,7 +268,7 @@ export class DevinAcp {
     this.child.stdout.setEncoding("utf8");
     this.child.stdout.on("data", (chunk) => this._onData(chunk));
     this.child.on("exit", (code) => {
-      const err = new Error(`devin acp exited (code ${code})`);
+      const err = new Error(`agent process exited (code ${code})`);
       for (const { reject } of this._pending.values()) reject(err);
       this._pending.clear();
     });

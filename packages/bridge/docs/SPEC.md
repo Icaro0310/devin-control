@@ -240,8 +240,13 @@ Options: --sessions-file f  --policy f  --bin path  --timeout-ms n  --yes
   `cost`, `timedOut`) plus the aggregated TEXT.
 - Interactive TTY: policy `ask` prompts the operator on stderr
   (`[y/N]`, default deny). Non-TTY is fail-closed unless `--yes`.
-- `DEVIN_CLI_PATH` overrides devin.exe autodetect
-  (`%LOCALAPPDATA%\Programs\Devin\...\devin.exe`).
+- Agent resolution is configurable: `BRIDGE_AGENT_BIN` (explicit
+  executable for any ACP CLI) → `BRIDGE_AGENT` strategy candidates
+  (`AGENT_STRATEGIES`, default `devin`) → devin.exe autodetect
+  (`DEVIN_CLI_PATH` → `%LOCALAPPDATA%\Programs\Devin\...\devin.exe` →
+  PATH). `BRIDGE_AGENT_ARGS` overrides the spawn argv (JSON array,
+  default `["acp"]`); `BRIDGE_CREDENTIALS_PATH` overrides the
+  credentials.toml path before `DEVIN_CREDENTIALS_PATH`.
 
 ## 11. Testing
 
