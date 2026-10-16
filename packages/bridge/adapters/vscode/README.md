@@ -25,7 +25,7 @@ mutating code path exists in the source.
 npm i -g @icaro0310/devin-bridge
 ```
 
-Compatible CLI range: `>=0.1.0,<0.2.0` (pinned as `devin-bridge-cli` in
+Compatible CLI range: `>=0.1.0,<0.3.0` (pinned as `devin-bridge-cli` in
 `package.json`; `test/cli-contract.test.js` keeps the pin, the
 `COMPATIBLE_CLI` bounds and `packages/bridge/package.json` in sync).
 
