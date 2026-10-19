@@ -20,7 +20,7 @@ from rembg import remove as rembg_remove
 
 ROOT = Path(__file__).resolve().parent
 SRC = ROOT / "ai-src"
-OUT = ROOT.parent / "assets" / "chars"
+OUT = ROOT.parent / "src" / "devin_office" / "assets" / "chars"
 FW, FH = 32, 48
 GROUND_H = 42          # altura do conteúdo dentro da cell
 SEED = 42

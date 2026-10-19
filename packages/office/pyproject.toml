@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "devin-office"
+version = "0.1.0"
+description = "Local-first dashboard rendering live Devin CLI/Desktop sessions, subagents and tool calls as an animated circuit board — read-only, stdlib only."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [{ name = "Icaro0310" }]
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+devin-office = "devin_office.daemon:main"
+devin-office-hub = "devin_office.hub:main"
+devin-office-probe = "devin_office.probe:main"
+devin-office-executor = "devin_office.executor:main"
+devin-office-procmap = "devin_office.procmap:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+# index.html/kanban.html are served straight off the package dir
+# (Path(__file__).parent); up.pyw is the Windows split-mode supervisor,
+# spawned by path; assets/ feeds the hub's /assets/ sprite route.
+devin_office = ["*.html", "*.pyw", "assets/**"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

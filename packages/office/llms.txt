@@ -10,11 +10,11 @@ Devin Office solves observability for Devin sessions: the Devin UI shows one ses
 
 ## Key commands
 
-- `python3 daemon.py --port 8788`: standalone read-only mode; serve the dashboard at http://localhost:8788 from the Devin machine
-- `python3 hub.py --port 8790`: split mode; serve the dashboard on a hub that receives probe state (token required for non-loopback binds)
-- `python3 probe.py --interval 3`: split mode; poll local Devin state and POST changes to the hub
-- `python3 executor.py`: optional ACP control process for message/spawn/kill (opt-in via OFFICE_CONTROL_ENABLED)
-- `py -3 daemon.py --port 8788`: Windows equivalent of standalone mode
+- `devin-office --port 8788`: standalone read-only mode; serve the dashboard at http://localhost:8788 from the Devin machine (also `python3 src/devin_office/daemon.py --port 8788` from a checkout, no install)
+- `devin-office-hub --port 8790`: split mode; serve the dashboard on a hub that receives probe state (token required for non-loopback binds)
+- `devin-office-probe --interval 3`: split mode; poll local Devin state and POST changes to the hub
+- `devin-office-executor`: optional ACP control process for message/spawn/kill (opt-in via OFFICE_CONTROL_ENABLED)
+- `pip install -e packages/office`: install the console scripts from a checkout
 
 ## When to use / when not
 

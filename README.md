@@ -14,7 +14,7 @@
 
 <div align="center">
 
-<a href="https://icaro0310.github.io/demos/devin-office.html"><img src="packages/office/assets/demo.png" alt="devin-office demo: Devin sessions, subagents and tools as an animated circuit board (synthetic data)" width="80%"/></a>
+<a href="https://icaro0310.github.io/demos/devin-office.html"><img src="packages/office/src/devin_office/assets/demo.png" alt="devin-office demo: Devin sessions, subagents and tools as an animated circuit board (synthetic data)" width="80%"/></a>
 
 <sub>**devin-office**: live Devin activity as an animated circuit board. The interactive demo (above) runs on synthetic data; a session kanban tracks RUNNING · BLOCKED · REVIEW · CLOSED · [open the kanban demo](https://icaro0310.github.io/demos/devin-office-kanban.html)</sub>
 
@@ -48,7 +48,7 @@ the write/control side of the ecosystem.
 | [`packages/bridge`](packages/bridge) | [![@icaro0310/devin-bridge](https://img.shields.io/npm/v/@icaro0310%2fdevin-bridge)](https://www.npmjs.com/package/@icaro0310/devin-bridge) | Cross-platform policy-gated ACP bridge for Devin CLI — isolated sessions per project with fail-closed permission rules |
 | [`packages/orchestrator`](packages/orchestrator) | [![devin-fanout](https://img.shields.io/pypi/v/devin-fanout)](https://pypi.org/project/devin-fanout/) | Background-worker fan-out policy: deterministic planner enforcing worker caps, no nesting, collect-before-report |
 | [`packages/switch`](packages/switch) | `devin-switch` (PyPI, pending publish) | Switch between Devin configuration profiles (hooks, MCP, models) with snapshot and verification |
-| [`packages/office`](packages/office) | source-only | Live Devin activity as an animated SVG circuit board: sessions, subagents, tools |
+| [`packages/office`](packages/office) | `devin-office` (PyPI, pending publish) | Live Devin activity as an animated SVG circuit board: sessions, subagents, tools |
 
 > **Renamed (Oct 2026):** this repository moved from `Icaro0310/devin-bridge` to `Icaro0310/devin-control` when it became the `devin-control` product workspace. The npm package `@icaro0310/devin-bridge`, the PyPI packages and all console scripts keep their names; stars, issues and history are preserved by the redirect.
 
@@ -56,8 +56,7 @@ the write/control side of the ecosystem.
 
 ```
 packages/<name>/   one installable package each — bridge is Node (npm),
-                   orchestrator/switch are Python (uv workspace), office
-                   is a source-only service (flat modules, PYTHONPATH).
+                   orchestrator/switch/office are Python (uv workspace).
 ```
 
 Each package ships independently: a tag `orchestrator-vX.Y.Z` or
@@ -90,8 +89,9 @@ fails with "Executable `devin-switch` not found".
 
 ## Platform support
 
-All packages support Linux and Windows (office is Linux-only — it uses
-`fcntl`; macOS support is planned, not claimed). Per-package guides live
+All packages support Linux and Windows (macOS support is planned, not
+claimed; office's `/proc`-based panels and the flock session probe are
+POSIX-only and degrade gracefully elsewhere). Per-package guides live
 under `packages/<name>/`.
 
 > **Unofficial community project.** Not affiliated with, endorsed by, or

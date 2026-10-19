@@ -56,9 +56,12 @@ TOOL_PATTERNS = {
     "browser-mcp": "browser-server.py",
     "slack-poll": "slack-poll",
     "devin-daemon": "devin-daemon",
-    "office-supervisor": "up.pyw",
-    "office-probe": "probe.py",
-    "office-executor": "executor.py",
+    # each office component matches its script path, its console script
+    # (pip/uv install) and its `python -m devin_office.<mod>` form
+    "office-supervisor": ("up.pyw",),
+    "office-probe": ("probe.py", "devin-office-probe", "devin_office.probe"),
+    "office-executor": ("executor.py", "devin-office-executor",
+                        "devin_office.executor"),
     "vm-tunnel": "devin-vm",
     "tailscale": "tailscaled",
 }

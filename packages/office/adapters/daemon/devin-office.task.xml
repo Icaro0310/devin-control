@@ -56,9 +56,12 @@
   <Actions Context="Author">
     <Exec>
       <!-- install-task.ps1 replaces __OFFICE_CHECKOUT__ with the absolute
-           path of the devin-control checkout before registering. -->
+           path of the devin-control checkout before registering. daemon.py
+           lives under src\devin_office\ — it self-bootstraps imports, so a
+           bare checkout needs no install. With `uv tool install`/`pip
+           install -e` you can point the action at `devin-office` instead. -->
       <Command>py</Command>
-      <Arguments>-3 "__OFFICE_CHECKOUT__\daemon.py" --port 8788</Arguments>
+      <Arguments>-3 "__OFFICE_CHECKOUT__\src\devin_office\daemon.py" --port 8788</Arguments>
     </Exec>
   </Actions>
 </Task>

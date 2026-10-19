@@ -46,7 +46,10 @@ def _vmstat(path: Path) -> tuple[int, int]:
 def collect_swap(proc_root=None) -> dict | None:
     proc_root = Path(proc_root) if proc_root else PROC_ROOT
     meminfo = proc_root / "meminfo"
-    if os.name != "posix" or not meminfo.is_file():
+    # No os.name fast-path: /proc (and meminfo inside it) simply does not
+    # exist on Windows — the is_file() check is the real guard, and it
+    # keeps the parsing logic testable off-Linux via an injected root.
+    if not meminfo.is_file():
         return None
     try:
         mi = _kv(meminfo)

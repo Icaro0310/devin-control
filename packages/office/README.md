@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/banner.svg" alt="devin-office" width="100%"/>
+<img src="src/devin_office/assets/banner.svg" alt="devin-office" width="100%"/>
 
 <a href="https://github.com/Icaro0310/devin-control/actions/workflows/test-office.yml"><img src="https://github.com/Icaro0310/devin-control/actions/workflows/test-office.yml/badge.svg" alt="tests"/></a>
 
@@ -42,7 +42,7 @@ runtime dashboard does not require them.
 
 ## Preview
 
-![devin-office dashboard — Devin chip with live traces to tools and subagents](assets/demo.png)
+![devin-office dashboard — Devin chip with live traces to tools and subagents](src/devin_office/assets/demo.png)
 
 Demo page (synthetic sample data): [icaro0310.github.io/demos/devin-office.html](https://icaro0310.github.io/demos/devin-office.html)
 
@@ -50,12 +50,12 @@ Demo page (synthetic sample data): [icaro0310.github.io/demos/devin-office.html]
 
 | Component | Purpose |
 |---|---|
-| `daemon.py` | Reads the local `sessions.db` read-only and serves `/api/state` plus the dashboard. Standalone mode; no tunnel or remote server. |
-| `probe.py` | In split mode, polls local state and sends updates to a hub only when state changes. Remote controls are disabled by default. |
-| `hub.py` | Serves the dashboard, receives probe state, and exposes health/state endpoints. It binds to loopback by default. |
-| `executor.py` | Optional ACP control process for message/spawn/kill requests. Requires an authenticated Devin CLI and explicit opt-in. |
-| `index.html` | Self-contained SVG dashboard; no JavaScript/CSS build step. |
-| `swapmon.py` | SwapFile Queue collector (Linux `/proc`, read-only): swap totals, page-in/out rates and the per-process swap queue. |
+| `devin_office/daemon.py` (`devin-office`) | Reads the local `sessions.db` read-only and serves `/api/state` plus the dashboard. Standalone mode; no tunnel or remote server. |
+| `devin_office/probe.py` (`devin-office-probe`) | In split mode, polls local state and sends updates to a hub only when state changes. Remote controls are disabled by default. |
+| `devin_office/hub.py` (`devin-office-hub`) | Serves the dashboard, receives probe state, and exposes health/state endpoints. It binds to loopback by default. |
+| `devin_office/executor.py` (`devin-office-executor`) | Optional ACP control process for message/spawn/kill requests. Requires an authenticated Devin CLI and explicit opt-in. |
+| `devin_office/index.html` | Self-contained SVG dashboard; no JavaScript/CSS build step. |
+| `devin_office/swapmon.py` | SwapFile Queue collector (Linux `/proc`, read-only): swap totals, page-in/out rates and the per-process swap queue. |
 
 An optional `OFFICE_ECO_URL` can supply a separate ecosystem-status JSON payload.
 There is no default dependency on another dashboard or maintainer service.
@@ -84,7 +84,7 @@ on hosts without `/proc` (e.g. Windows).
 - Devin Desktop or Devin CLI installed on the machine whose sessions you want
   to observe.
 - Python 3.10 or newer. The dashboard, probe and hub use the Python standard
-  library; no `pip install` is needed.
+  library; no third-party dependencies.
 - The `devin` CLI on `PATH` is required only for the optional ACP executor.
 
 ## Quick start: one machine
@@ -95,10 +95,14 @@ this repository:
 ```bash
 git clone https://github.com/Icaro0310/devin-control.git
 cd devin-control/packages/office
+pip install -e .          # or: uv tool install .
+devin-office --port 8788
 ```
 
-Then start the daemon with the command for your OS — see the
-[Linux](README.linux.md) or [Windows](README.windows.md) guide.
+No install at all also works — the module self-bootstraps its imports, so
+`python3 src/devin_office/daemon.py --port 8788` from a bare checkout serves
+the same dashboard. Then see the [Linux](README.linux.md) or
+[Windows](README.windows.md) guide.
 
 Open `http://localhost:8788`. Stop the server with `Ctrl+C`. It binds to
 loopback and does not write to Devin's databases.
@@ -141,7 +145,7 @@ restrict port `8790` with your firewall:
 ```bash
 export OFFICE_BIND='<private-interface-ip>'
 export OFFICE_TOKEN='<same-random-secret-used-by-the-probe>'
-python3 hub.py --port 8790
+devin-office-hub --port 8790   # or: python3 src/devin_office/hub.py --port 8790
 ```
 
 A non-loopback bind refuses to start without `OFFICE_TOKEN`. The hub uses plain
@@ -157,7 +161,7 @@ If the hub is reachable over your private network:
 ```powershell
 $env:OFFICE_HUB = 'http://<private-hub-address>:8790'
 $env:OFFICE_TOKEN = '<same-random-secret-used-by-the-hub>'
-py -3 probe.py --interval 3
+devin-office-probe --interval 3   # or: py -3 src\devin_office\probe.py --interval 3
 ```
 
 For a loopback-only hub, open an SSH tunnel in another terminal and set
@@ -168,7 +172,7 @@ For a loopback-only hub, open an SSH tunnel in another terminal and set
 ```bash
 export OFFICE_HUB='http://<private-hub-address>:8790'
 export OFFICE_TOKEN='<same-random-secret-used-by-the-hub>'
-python3 probe.py --interval 3
+devin-office-probe --interval 3   # or: python3 src/devin_office/probe.py --interval 3
 ```
 
 For a loopback-only hub, run `ssh -N -L 8790:127.0.0.1:8790 <user>@<server>` in

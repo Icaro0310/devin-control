@@ -63,7 +63,9 @@ def spawn(name: str) -> subprocess.Popen:
         creationflags=CREATE_NO_WINDOW,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
-        cwd=str(ROOT.parent),
+        # packages/ (checkout layout); under an install it's just a scratch
+        # cwd — the spawned scripts resolve their own paths via __file__.
+        cwd=str(ROOT.parents[2] if len(ROOT.parents) >= 3 else ROOT.parent),
     )
     log(f"START {name} pid={p.pid}")
     return p

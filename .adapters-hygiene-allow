@@ -5,6 +5,6 @@
 # The devin-office daemon serves its own documented loopback endpoint
 # (127.0.0.1:8788 / localhost:8788) — these descriptors and installer
 # reference the product's public bind, not an internal endpoint leak.
-packages/office/adapters/daemon/devin-office.task.xml sha256=a0ba6d75b0c5280c9dc8fa6b7c9f0603db0269fd03412ec8dffc3f6f6dd7d041
-packages/office/adapters/daemon/devin-office.service sha256=499e5cbb12b2ae3430aa7623805c2dc81f6e338cf0396a1a58a083a58cb44f44
-packages/office/adapters/daemon/install-task.ps1 sha256=2f96cae0cf1b2a39f62788fba7cf67f56e2165e5722748d3c76434b180eef0dd
+packages/office/adapters/daemon/devin-office.task.xml sha256=17d3b3456e38e8b2149a789a9f41b90120174314d267d4bee8af15958d0c9a71
+packages/office/adapters/daemon/devin-office.service sha256=4cf8643143ed2eca04c3510db3a661a8f2a71a1d1a724c3c5fcc7045bdced4b8
+packages/office/adapters/daemon/install-task.ps1 sha256=4dd89068b3a9ee6a9c0ae72aa59795b67940f4812092f660fcee225cf9c44ce5

@@ -67,7 +67,11 @@ def _default_devin_exe() -> str:
 
 
 DEVIN_EXE = os.environ.get("OFFICE_DEVIN_EXE", _default_devin_exe())
-SPAWN_CWD = os.environ.get("OFFICE_SPAWN_CWD", str(ROOT.parent))
+# src/devin_office → packages/ (same "repo parent" default as the flat
+# layout); under a wheel install the default is meaningless — set
+# OFFICE_SPAWN_CWD explicitly there.
+_SPAWN_DEFAULT = ROOT.parents[2] if len(ROOT.parents) >= 3 else ROOT.parent
+SPAWN_CWD = os.environ.get("OFFICE_SPAWN_CWD", str(_SPAWN_DEFAULT))
 SPAWN_MODE = os.environ.get("OFFICE_SPAWN_MODE", "smart")  # modeId p/ spawns
 PROMPT_TIMEOUT_S = float(os.environ.get("OFFICE_PROMPT_TIMEOUT", "900"))
 CREATE_NO_WINDOW = 0x08000000

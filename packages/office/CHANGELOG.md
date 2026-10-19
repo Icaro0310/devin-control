@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Packaged distribution**: `pyproject.toml` (setuptools `src/` layout)
+  turns the service into the `devin-office` package. Modules live under
+  `src/devin_office/` with `devin_office.*` imports; `index.html`,
+  `kanban.html`, `up.pyw` and `assets/` ship as package data resolved via
+  `Path(__file__).parent` (unchanged data-dir resolution). Console
+  scripts: `devin-office` (daemon), `devin-office-hub`,
+  `devin-office-probe`, `devin-office-executor`, `devin-office-procmap`.
+  Every module self-bootstraps `src/` onto `sys.path` when run as a loose
+  script (`__package__` empty), so the documented no-install invocation
+  `python3 src/devin_office/daemon.py --port 8788` keeps working and the
+  systemd unit / Scheduled Task only needed a path update. `--help`
+  responds on all entry points (argparse replaced manual argv scans).
+  `tests/` now run on Windows too: the flock-hold cases are skipped
+  without POSIX `fcntl`.
+
 - Daemon adapters for the dashboard (`adapters/daemon/`):
   `devin-office.service`, a user-level systemd unit keeping the resident
   `daemon.py` server up (`Restart=on-failure`, loopback-confined,

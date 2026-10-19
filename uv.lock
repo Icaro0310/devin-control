@@ -12,6 +12,7 @@ resolution-markers = [
 members = [
     "devin-control",
     "devin-fanout",
+    "devin-office",
     "devin-switch",
 ]
 
@@ -268,6 +269,20 @@ dev = [
 name = "devin-fanout"
 version = "0.2.0"
 source = { editable = "packages/orchestrator" }
+
+[package.optional-dependencies]
+dev = [
+    { name = "pytest" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "pytest", marker = "extra == 'dev'", specifier = ">=8" }]
+provides-extras = ["dev"]
+
+[[package]]
+name = "devin-office"
+version = "0.1.0"
+source = { editable = "packages/office" }
 
 [package.optional-dependencies]
 dev = [

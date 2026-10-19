@@ -6,7 +6,7 @@ import urllib.request
 from http.server import ThreadingHTTPServer
 from unittest.mock import patch
 
-import hub
+from devin_office import hub
 
 
 class HubSecurityTests(unittest.TestCase):

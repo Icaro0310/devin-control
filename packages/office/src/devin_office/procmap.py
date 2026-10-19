@@ -19,8 +19,10 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from daemon import SESSION_LOCKS, SESSIONS_DB
+if __package__ in (None, ""):
+    # Loose script run from a checkout (no install): make src/ importable.
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from devin_office.daemon import SESSION_LOCKS, SESSIONS_DB
 
 
 @dataclass

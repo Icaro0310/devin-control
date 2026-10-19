@@ -5,8 +5,11 @@
 
 `devin-office.task.xml` registers a **user-scope** task with a single
 **logon trigger**: while you are logged on it keeps
-`py -3 <checkout>\daemon.py --port 8788` running — the dashboard on
-http://localhost:8788. Unlike the other tasks in this ecosystem this one
+`py -3 <checkout>\src\devin_office\daemon.py --port 8788` running — the
+dashboard on http://localhost:8788. (The module self-bootstraps its
+imports, so a bare checkout needs no install; with
+`uv tool install`/`pip install -e` the action can call `devin-office`
+directly instead.) Unlike the other tasks in this ecosystem this one
 *is* the resident process, so its `ExecutionTimeLimit` is `PT0S`
 (unlimited) and Task Scheduler restarts it up to 3 times on failure.
 

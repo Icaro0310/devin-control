@@ -1,15 +1,17 @@
-import fcntl
 import json
 import os
 import sqlite3
-import sys
 import tempfile
 import time
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-import sessmon
+try:
+    import fcntl
+except ImportError:  # Windows — the flock probe is POSIX-only there
+    fcntl = None
+
+from devin_office import sessmon
 
 DDL = """
 CREATE TABLE sessions (id TEXT PRIMARY KEY, working_directory TEXT NOT NULL,
@@ -55,6 +57,9 @@ class SessMonTests(unittest.TestCase):
         for fd in self._fds:
             os.close(fd)
         self._tmp.cleanup()
+
+    _needs_flock = unittest.skipUnless(
+        fcntl, "flock probe is POSIX-only (Windows holds locks differently)")
 
     def _hold_lock(self, sid):
         """Simula um processo devin vivo: flock exclusivo no .lock."""
@@ -108,6 +113,7 @@ class SessMonTests(unittest.TestCase):
         s = self._collect()["s-q"]
         self.assertEqual((s["status"], s["reason"]), ("blocked", "question"))
 
+    @_needs_flock
     def test_running_locked_tool_result_turn(self):
         # GUI a meio de um turno: último node gravado é um tool result —
         # turno ainda aberto, lock mantido, actividade fresca.
@@ -117,6 +123,7 @@ class SessMonTests(unittest.TestCase):
         s = self._collect()["s-tool"]
         self.assertEqual((s["status"], s["reason"]), ("running", "working"))
 
+    @_needs_flock
     def test_running_locked_fresh_assistant_text(self):
         # Sessão GUI locked com escrita fresca na acp db (sessions.db atrasa):
         # último node é texto do assistant mas o processo está a trabalhar.
@@ -150,6 +157,7 @@ class SessMonTests(unittest.TestCase):
         s = self._collect(acp_tool={"s-guip": "pending"})["s-guip"]
         self.assertEqual((s["status"], s["reason"]), ("blocked", "approval"))
 
+    @_needs_flock
     def test_locked_stale_is_review(self):
         # Lock mantido mas sem actividade há muito → não é working.
         self._session("s-idle", age=5000)
@@ -157,6 +165,7 @@ class SessMonTests(unittest.TestCase):
         self._hold_lock("s-idle")
         self.assertEqual(self._collect()["s-idle"]["status"], "review")
 
+    @_needs_flock
     def test_blocked_locked_fresh_question(self):
         # Pergunta vence running mesmo com lock + actividade fresca.
         self._session("s-lq", age=10)
@@ -165,6 +174,7 @@ class SessMonTests(unittest.TestCase):
         s = self._collect()["s-lq"]
         self.assertEqual((s["status"], s["reason"]), ("blocked", "question"))
 
+    @_needs_flock
     def test_running_locked_in_progress_old(self):
         # Tool longa com lock: sem writes novos mas ainda a correr.
         self._session("s-long", age=600)

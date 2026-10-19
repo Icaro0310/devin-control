@@ -1,8 +1,5 @@
 name: test-office
 
-# office is a source-only service (no pyproject, flat modules): tests run
-# with PYTHONPATH over packages/office. Linux only — the code uses fcntl.
-
 on:
   push:
     branches: [main]
@@ -19,11 +16,8 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12"
-      - run: pip install pytest
-      - run: PYTHONPATH=packages/office python -m pytest packages/office/tests -q
+    permissions:
+      contents: read
+    uses: Icaro0310/devin-powerups/.github/workflows/python-test.yml@v1
+    with:
+      package-dir: packages/office

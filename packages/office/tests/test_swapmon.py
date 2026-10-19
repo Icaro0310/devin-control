@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import swapmon
+from devin_office import swapmon
 
 
 def _mkproc(root: Path) -> None:
