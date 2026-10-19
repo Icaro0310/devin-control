@@ -12,10 +12,19 @@ Corporate Windows is a local-only environment: no Devin VM, QwenPaw, Slack depen
 
 ## Install
 
-From a repository checkout, run the standalone read-only dashboard:
+From a repository checkout, install the package and run the standalone
+read-only dashboard:
 
 ```powershell
-py -3 daemon.py --port 8788
+cd devin-control\packages\office
+pip install -e .          # or: uv tool install . / pipx install .
+devin-office --port 8788
+```
+
+No install also works — the module self-bootstraps its imports:
+
+```powershell
+py -3 src\devin_office\daemon.py --port 8788
 ```
 
 Open `http://localhost:8788`; the process stops with Ctrl+C.
@@ -74,7 +83,7 @@ Save this as `%USERPROFILE%\devin-tasks\devin-office.cmd`:
 
 ```batch
 set "PATH=%USERPROFILE%\.local\bin;%PATH%"
-py "<CAMINHO_DO_CHECKOUT>\daemon.py" --port 8788
+py "<CAMINHO_DO_CHECKOUT>\src\devin_office\daemon.py" --port 8788
 ```
 
 ```powershell

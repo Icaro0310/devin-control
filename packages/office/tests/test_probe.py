@@ -1,6 +1,6 @@
 import unittest
 
-from probe import executor_spawn_kwargs
+from devin_office.probe import executor_spawn_kwargs
 
 
 class ProbePlatformTests(unittest.TestCase):

@@ -9,9 +9,10 @@
   running for the session — the dashboard on http://localhost:8788.
 
   The XML carries a __OFFICE_CHECKOUT__ placeholder because daemon.py
-  lives in the package checkout (there is no installed CLI); this script
-  resolves the checkout from its own location and patches the XML before
-  registering.
+  lives in the package checkout (under src\devin_office\ — a bare checkout
+  needs no install; `uv tool install`/`pip install -e` users can point the
+  action at the `devin-office` CLI instead); this script resolves the
+  checkout from its own location and patches the XML before registering.
 
   User-scope tasks need no elevation. If you get access denied
   (0x80070005), your account or policy blocks Task Scheduler — see
@@ -33,9 +34,9 @@ if (-not (Test-Path $xmlPath)) {
 }
 
 # This script sits at packages/office/adapters/daemon — the package
-# root (where daemon.py lives) is two levels up.
+# root (where src\devin_office\daemon.py lives) is two levels up.
 $officeDir = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
-$daemonPy = Join-Path $officeDir 'daemon.py'
+$daemonPy = Join-Path $officeDir 'src\devin_office\daemon.py'
 if (-not (Test-Path $daemonPy)) {
     throw "daemon.py not found at $daemonPy — is this script inside a devin-control checkout?"
 }

@@ -12,10 +12,19 @@ Linux uses the extended runtime: local execution plus optional Devin VM/QwenPaw 
 
 ## Install
 
-From a repository checkout, run the standalone read-only dashboard:
+From a repository checkout, install the package and run the standalone
+read-only dashboard:
 
 ```bash
-python3 daemon.py --port 8788
+cd devin-control/packages/office
+pip install -e .          # or: uv tool install . / pipx install .
+devin-office --port 8788
+```
+
+No install also works — the module self-bootstraps its imports:
+
+```bash
+python3 src/devin_office/daemon.py --port 8788
 ```
 
 Open `http://localhost:8788`; the process stops with Ctrl+C.
@@ -45,7 +54,7 @@ Use `--data-dir`/`--config-dir` where the tool documents them for non-default lo
 _Long-running daemon. Prefer a `systemd --user` service (`WorkingDirectory=<CAMINHO_DO_CHECKOUT>`, `Restart=on-failure`) over `@reboot`._
 
 ```cron
-@reboot python <CAMINHO_DO_CHECKOUT>/daemon.py --port 8788
+@reboot python <CAMINHO_DO_CHECKOUT>/src/devin_office/daemon.py --port 8788
 ```
 
 Equivalent `systemd --user` timer works too; enable lingering if it must run without a login session.

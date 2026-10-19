@@ -36,10 +36,18 @@ import threading
 import time
 from pathlib import Path
 
+if __package__ in (None, ""):
+    # Loose script run from a checkout (no install): make src/ importable so
+    # the devin_office.* imports below resolve — same contract the old flat
+    # sys.path.insert gave, pointed one level up at the src/ root.
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from devin_office.state import spawn_cwd, state_dir
+
 ROOT = Path(__file__).resolve().parent
-INBOX = ROOT / "cmd_inbox"
-OUTBOX = ROOT / "outbox"
-STATEDIR = ROOT / "state"
+_STATE = state_dir()
+INBOX = _STATE / "cmd_inbox"
+OUTBOX = _STATE / "outbox"
+STATEDIR = _STATE / "state"
 PIDFILE = STATEDIR / "executor.pid"
 SPAWNS = STATEDIR / "spawns.json"
 _appdata = os.environ.get("APPDATA")
@@ -67,7 +75,7 @@ def _default_devin_exe() -> str:
 
 
 DEVIN_EXE = os.environ.get("OFFICE_DEVIN_EXE", _default_devin_exe())
-SPAWN_CWD = os.environ.get("OFFICE_SPAWN_CWD", str(ROOT.parent))
+SPAWN_CWD = str(spawn_cwd())
 SPAWN_MODE = os.environ.get("OFFICE_SPAWN_MODE", "smart")  # modeId p/ spawns
 PROMPT_TIMEOUT_S = float(os.environ.get("OFFICE_PROMPT_TIMEOUT", "900"))
 CREATE_NO_WINDOW = 0x08000000
@@ -80,7 +88,7 @@ def ensure_dirs() -> None:
 
 def log(msg: str) -> None:
     try:
-        with open(ROOT / "executor.log", "a", encoding="utf-8") as f:
+        with open(_STATE / "executor.log", "a", encoding="utf-8") as f:
             f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {msg}\n")
     except OSError:
         pass

@@ -2,7 +2,12 @@ __pycache__/
 *.log
 *.db
 ai-src/
-*.pyc
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+dist/
+build/
 .env
 cmd_inbox/
 outbox/

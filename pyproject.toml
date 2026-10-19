@@ -1,7 +1,6 @@
 # Workspace root — not itself a published package. Python members live in
-# packages/* (orchestrator, switch). packages/bridge is the Node package
-# (@icaro0310/devin-bridge) managed by the npm workspace; packages/office is
-# a source-only service (no pyproject, not a uv member).
+# packages/* (orchestrator, switch, office). packages/bridge is the Node
+# package (@icaro0310/devin-bridge) managed by the npm workspace.
 
 [project]
 name = "devin-control"
@@ -23,7 +22,7 @@ extend-exclude = ["packages/office/tools"]
 "packages/office/**" = ["BLE001", "S110", "S112"]
 
 [tool.uv.workspace]
-members = ["packages/orchestrator", "packages/switch"]
+members = ["packages/orchestrator", "packages/switch", "packages/office"]
 
 [dependency-groups]
 dev = ["pytest>=8", "ruff>=0.6"]

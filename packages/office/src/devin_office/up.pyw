@@ -9,9 +9,15 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+if __package__ in (None, ""):
+    # Loose script run from a checkout (no install): make src/ importable so
+    # the devin_office.* imports below resolve — same contract the old flat
+    # sys.path.insert gave, pointed one level up at the src/ root.
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from devin_office.state import state_dir, spawn_cwd
 
 ROOT = Path(__file__).resolve().parent
-LOG = ROOT / "up.log"
+LOG = state_dir() / "up.log"
 CREATE_NO_WINDOW = 0x08000000
 SSH_HOST = os.environ.get("OFFICE_SSH_HOST", "")
 OFFICE_PORT = int(os.environ.get("OFFICE_PORT", "8790"))
@@ -63,7 +69,9 @@ def spawn(name: str) -> subprocess.Popen:
         creationflags=CREATE_NO_WINDOW,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
-        cwd=str(ROOT.parent),
+        # packages/ (checkout layout); under an install it's just a scratch
+        # cwd — the spawned scripts resolve their own paths via __file__.
+        cwd=str(spawn_cwd()),
     )
     log(f"START {name} pid={p.pid}")
     return p

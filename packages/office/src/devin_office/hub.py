@@ -4,10 +4,13 @@
 Receives WorldState via POST /api/ingest from a local Windows or Linux probe
 and serves index.html plus /api/state. Zero dependencies (stdlib only).
 
-Usage: python3 hub.py [--port 8790]
+Usage: devin-office-hub [--port 8790]
+       python -m devin_office.hub [--port 8790]
+       python src/devin_office/hub.py [--port 8790]   (checkout, no install)
 Env: OFFICE_BIND (default 127.0.0.1); non-loopback binds require OFFICE_TOKEN.
      OFFICE_CONTROL_ENABLED opts into message/spawn/kill endpoints (default off).
 """
+import argparse
 import ipaddress
 import json
 import os
@@ -17,20 +20,24 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+if __package__ in (None, ""):
+    # Loose script run from a checkout (no install): make src/ importable.
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from devin_office import sessmon
+from devin_office.state import state_dir
+
 ROOT = Path(__file__).resolve().parent
-sys.path.insert(0, str(ROOT))
-import sessmon
 
 INDEX = (ROOT / "index.html").read_bytes()
 KANBAN_INDEX = (ROOT / "kanban.html").read_bytes()
-KANBAN_FILE = ROOT / "kanban.json"  # sessões fechadas no board (hub side)
+KANBAN_FILE = state_dir() / "kanban.json"  # sessões fechadas no board (hub side)
 TOKEN = os.environ.get("OFFICE_TOKEN", "")
 BIND = os.environ.get("OFFICE_BIND", "127.0.0.1")
 CONTROL_ENABLED = os.environ.get("OFFICE_CONTROL_ENABLED", "").lower() in {
     "1", "true", "yes", "on"
 }
 STALE_AFTER_S = 15
-CMD_FILE = ROOT / "cmd_queue.json"
+CMD_FILE = state_dir() / "cmd_queue.json"
 CMD_STALE_S = 120          # claimed sem ack há >2min → re-deliver
 CMD_KEEP_S = 3600          # purga comandos terminados após 1h
 MAX_TEXT = 4000
@@ -292,14 +299,23 @@ class Handler(BaseHTTPRequestHandler):
         self._send(200, b'{"ok":true}')
 
 
-if __name__ == "__main__":
-    port = 8790
-    if "--port" in sys.argv:
-        port = int(sys.argv[sys.argv.index("--port") + 1])
+def main(argv: list | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        prog="devin-office-hub",
+        description="Private hub for Devin Office: receives probe state, "
+                    "serves the dashboard (default loopback only).")
+    parser.add_argument("--port", type=int, default=8790)
+    args = parser.parse_args(argv)
     try:
         validate_binding(BIND, TOKEN)
     except ValueError as exc:
         print(f"devin-office hub: {exc}", file=sys.stderr)
         raise SystemExit(2) from exc
-    print(f"devin-office hub -> http://{BIND}:{port} (token={'set' if TOKEN else 'loopback only'})")
-    ThreadingHTTPServer((BIND, port), Handler).serve_forever()
+    print(f"devin-office hub -> http://{BIND}:{args.port} "
+          f"(token={'set' if TOKEN else 'loopback only'})")
+    ThreadingHTTPServer((BIND, args.port), Handler).serve_forever()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

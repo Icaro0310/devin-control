@@ -4,8 +4,11 @@
 Polls sessions.db read-only and serves WorldState at /api/state plus index.html.
 Zero dependencies (stdlib only).
 
-Usage: python daemon.py [--port 8788]
+Usage: devin-office [--port 8788]
+       python -m devin_office.daemon [--port 8788]
+       python src/devin_office/daemon.py [--port 8788]   (checkout, no install)
 """
+import argparse
 import json
 import os
 import re
@@ -16,10 +19,15 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-import sessmon
-from ecomon import collect_eco
-from swapmon import collect_swap
+if __package__ in (None, ""):
+    # Loose script run from a checkout (no install): make src/ importable so
+    # the devin_office.* imports below resolve — same contract the old flat
+    # sys.path.insert gave, pointed one level up at the src/ root.
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from devin_office import sessmon
+from devin_office.ecomon import collect_eco
+from devin_office.state import state_dir
+from devin_office.swapmon import collect_swap
 
 ROOT = Path(__file__).resolve().parent
 
@@ -51,7 +59,7 @@ HEARTBEAT_FILE = (
     if os.environ.get("OFFICE_HEARTBEAT_FILE") else None
 )
 ACTIVE_WINDOW_S = 15 * 60  # sessão "viva" se teve atividade nos últimos 15 min
-KANBAN_FILE = ROOT / "kanban.json"  # sessões fechadas no board (standalone)
+KANBAN_FILE = state_dir() / "kanban.json"  # sessões fechadas no board (standalone)
 SUBAGENT_TTL_S = 30 * 60
 WAIT_GRACE_S = 20          # turno "terminado" se última msg é texto puro há >20s
 MAX_FILES = 6
@@ -560,12 +568,20 @@ class Handler(BaseHTTPRequestHandler):
             pass
 
 
-if __name__ == "__main__":
-    port = 8788
-    if "--port" in sys.argv:
-        port = int(sys.argv[sys.argv.index("--port") + 1])
-    print(f"devin-office smoke daemon -> http://localhost:{port}")
+def main(argv: list | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        prog="devin-office",
+        description="Standalone read-only Devin Office dashboard "
+                    "(sessions.db -> http://localhost:8788).")
+    parser.add_argument("--port", type=int, default=8788)
+    args = parser.parse_args(argv)
+    print(f"devin-office smoke daemon -> http://localhost:{args.port}")
     print(f"sessions.db: {SESSIONS_DB} (exists={SESSIONS_DB.exists()})")
     threading.Thread(target=refresh_state_loop, daemon=True).start()
     threading.Thread(target=refresh_eco_loop, daemon=True).start()
-    ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()
+    ThreadingHTTPServer(("127.0.0.1", args.port), Handler).serve_forever()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

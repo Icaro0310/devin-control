@@ -9,14 +9,17 @@ Também faz a ponte de comandos (control path):
   GET  /api/cmd/pending   → escreve office/cmd_inbox/<id>.json p/ executor.py
   outbox/<id>.json        → POST /api/cmd/ack {id,status,result}
 
-O executor (office/executor.py) fala ACP com `devin acp` e é quem executa
-message/spawn/kill a sério. Se não estiver vivo, o probe lança-o detached —
-up.pyw também o supervisiona.
+O executor (devin_office/executor.py) fala ACP com `devin acp` e é quem
+executa message/spawn/kill a sério. Se não estiver vivo, o probe lança-o
+detached — up.pyw também o supervisiona.
 
-Uso: python office/probe.py [--hub http://<your-vm>:8790] [--interval 3]
+Uso: devin-office-probe [--hub http://<your-vm>:8790] [--interval 3]
+     python -m devin_office.probe [--hub ...] [--interval 3]
+     python src/devin_office/probe.py [--hub ...]     (checkout, no install)
 Env: OFFICE_HUB — URL do hub (default http://localhost:8790)
      OFFICE_TOKEN — enviado como X-Office-Token se definido.
 """
+import argparse
 import hashlib
 import json
 import os
@@ -26,9 +29,11 @@ import time
 import urllib.request
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from daemon import collect_state
-from executor import (
+if __package__ in (None, ""):
+    # Loose script run from a checkout (no install): make src/ importable.
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from devin_office.daemon import collect_state
+from devin_office.executor import (
     INBOX,
     OUTBOX,
     ensure_dirs,
@@ -157,7 +162,21 @@ def poll_commands(acked: dict, last_ensure: list) -> None:
                 f.unlink(missing_ok=True)
 
 
-def main() -> None:
+def main(argv: list | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        prog="devin-office-probe",
+        description="Lean probe: collects local Devin state and POSTs "
+                    "changes to the office hub(s).")
+    parser.add_argument("--hub", metavar="URL",
+                        help="hub base URL (replaces OFFICE_HUB/OFFICE_HUBS)")
+    parser.add_argument("--interval", type=float, metavar="S",
+                        help="poll interval seconds (default OFFICE_INTERVAL=3)")
+    args = parser.parse_args(argv)
+    global HUBS, INTERVAL
+    if args.hub:
+        HUBS = [args.hub.rstrip("/")]
+    if args.interval is not None:
+        INTERVAL = args.interval
     last_hash = {h: "" for h in HUBS}
     last_push = {h: 0.0 for h in HUBS}
     failures = 0
@@ -198,9 +217,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    args = sys.argv[1:]
-    if "--hub" in args:
-        HUBS = [args[args.index("--hub") + 1].rstrip("/")]
-    if "--interval" in args:
-        INTERVAL = float(args[args.index("--interval") + 1])
-    main()
+    raise SystemExit(main())

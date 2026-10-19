@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import ecomon
+from devin_office import ecomon
 
 
 def _tools(cmdlines):

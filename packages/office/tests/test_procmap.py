@@ -1,10 +1,8 @@
 """OF-1: procmap — atribuição processo→sessão (read-only)."""
 import sqlite3
-import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-import procmap
+from devin_office import procmap
 
 
 def _mk_locks(d: Path, locks: dict) -> Path:

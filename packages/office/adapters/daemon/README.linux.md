@@ -4,18 +4,21 @@
 > 2026-10-12 and has not completed; see [README.md](README.md).
 
 **`devin-office.service`** (`Type=simple`, `Restart=on-failure`) runs
-`python3 .../daemon.py --port 8788` and keeps the dashboard up for as
-long as you are logged in. There is no timer — a resident server just
-needs `WantedBy=default.target`.
+`python3 .../src/devin_office/daemon.py --port 8788` — the module
+self-bootstraps its imports, so a bare checkout still works, no install
+needed — and keeps the dashboard up for as long as you are logged in.
+After `pip install -e packages/office` (or `uv tool install devin-office`),
+`ExecStart` can simply be `devin-office --port 8788`. There is no timer —
+a resident server just needs `WantedBy=default.target`.
 
 The service is hardened for a read-mostly loopback server:
 `ProtectSystem=strict` + `ProtectHome=read-only` with two punched holes —
 `session_locks/` needs an `O_RDWR` handle for the flock probe that tells
 live sessions apart (a read-only open would make every session report a
 false "held" lock), and **the checkout dir itself** stays writable
-because `POST /api/kanban` persists closed-state to `kanban.json` beside
-`daemon.py` (atomic `.tmp`+rename — a read-only checkout makes the kanban
-API return HTTP 400). `RestrictAddressFamilies` + `IPAddressAllow=localhost`
+because `POST /api/kanban` persists closed-state to `kanban.json` inside
+`src/devin_office/` (atomic `.tmp`+rename — a read-only checkout makes the
+kanban API return HTTP 400). `RestrictAddressFamilies` + `IPAddressAllow=localhost`
 /`IPAddressDeny=any` confine all I/O to loopback: the daemon binds
 127.0.0.1 and its eco probes only hit 127.0.0.1 health endpoints.
 
@@ -23,8 +26,9 @@ API return HTTP 400). `RestrictAddressFamilies` + `IPAddressAllow=localhost`
 
 ```bash
 # 1. Point ExecStart AND the second ReadWritePaths entry at YOUR
-#    devin-control checkout — the shipped path is
-#    %h/devin/devin-ecosystem/devin-control/packages/office.
+#    devin-control checkout — the shipped paths are
+#    %h/devin/devin-ecosystem/devin-control/packages/office (ReadWritePaths)
+#    plus .../packages/office/src/devin_office/daemon.py (ExecStart).
 #    (ReadWritePaths covers the checkout so kanban.json can be written;
 #    moving ExecStart without it silently breaks the kanban API.)
 $EDITOR devin-office.service
