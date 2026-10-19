@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Docs** — root README embeds the devin-office demo image under the
+  top badge block, linking to the hosted interactive demo and the
+  kanban demo.
 - **Docs** — corporate-Windows guides: Zscaler root export now covers both
   certificate stores (`certmgr.msc`/`certlm.msc`,
   `Cert:\CurrentUser\Root` + `Cert:\LocalMachine\Root`) and yields PEM

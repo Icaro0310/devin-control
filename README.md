@@ -12,6 +12,14 @@
 <a href="https://github.com/Icaro0310/devin-control/issues"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen" alt="PRs welcome"/></a>
 </div>
 
+<div align="center">
+
+<a href="https://icaro0310.github.io/demos/devin-office.html"><img src="packages/office/assets/demo.png" alt="devin-office demo: Devin sessions, subagents and tools as an animated circuit board (synthetic data)" width="80%"/></a>
+
+<sub>**devin-office**: live Devin activity as an animated circuit board. The interactive demo (above) runs on synthetic data; a session kanban tracks RUNNING · BLOCKED · REVIEW · CLOSED · [open the kanban demo](https://icaro0310.github.io/demos/devin-office-kanban.html)</sub>
+
+</div>
+
 <!-- DEVIN-ECO:BEGIN -->
 > **Part of the [DEVIN ecosystem](https://github.com/Icaro0310/awesome-devin)**  
 > Track: Control · Nature: product  
