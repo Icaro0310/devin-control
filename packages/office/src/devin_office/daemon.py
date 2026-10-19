@@ -25,6 +25,7 @@ if __package__ in (None, ""):
     # sys.path.insert gave, pointed one level up at the src/ root.
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from devin_office import sessmon
+from devin_office.state import state_dir
 from devin_office.ecomon import collect_eco
 from devin_office.swapmon import collect_swap
 
@@ -58,7 +59,7 @@ HEARTBEAT_FILE = (
     if os.environ.get("OFFICE_HEARTBEAT_FILE") else None
 )
 ACTIVE_WINDOW_S = 15 * 60  # sessão "viva" se teve atividade nos últimos 15 min
-KANBAN_FILE = ROOT / "kanban.json"  # sessões fechadas no board (standalone)
+KANBAN_FILE = state_dir() / "kanban.json"  # sessões fechadas no board (standalone)
 SUBAGENT_TTL_S = 30 * 60
 WAIT_GRACE_S = 20          # turno "terminado" se última msg é texto puro há >20s
 MAX_FILES = 6
