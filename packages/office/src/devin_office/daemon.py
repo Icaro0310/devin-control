@@ -25,8 +25,8 @@ if __package__ in (None, ""):
     # sys.path.insert gave, pointed one level up at the src/ root.
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from devin_office import sessmon
-from devin_office.state import state_dir
 from devin_office.ecomon import collect_eco
+from devin_office.state import state_dir
 from devin_office.swapmon import collect_swap
 
 ROOT = Path(__file__).resolve().parent

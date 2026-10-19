@@ -35,12 +35,13 @@ import sys
 import threading
 import time
 from pathlib import Path
+
 if __package__ in (None, ""):
     # Loose script run from a checkout (no install): make src/ importable so
     # the devin_office.* imports below resolve — same contract the old flat
     # sys.path.insert gave, pointed one level up at the src/ root.
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from devin_office.state import state_dir, spawn_cwd
+from devin_office.state import spawn_cwd, state_dir
 
 ROOT = Path(__file__).resolve().parent
 _STATE = state_dir()
