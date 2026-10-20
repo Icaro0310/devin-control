@@ -6,7 +6,7 @@ name: publish
 
 on:
   push:
-    tags: ['orchestrator-v*','switch-v*']
+    tags: ['orchestrator-v*','switch-v*','office-v*']
   workflow_dispatch:
     inputs:
       package:
@@ -16,6 +16,7 @@ on:
         options:
           - orchestrator
           - switch
+          - office
 
 permissions:
   contents: read
@@ -41,6 +42,8 @@ jobs:
                             echo "mod=devin_orchestrator" >> "$GITHUB_OUTPUT" ;;
                   switch) echo "dir=packages/switch" >> "$GITHUB_OUTPUT"
                           echo "mod=devin_switch" >> "$GITHUB_OUTPUT" ;;
+                  office) echo "dir=packages/office" >> "$GITHUB_OUTPUT"
+                          echo "mod=devin_office" >> "$GITHUB_OUTPUT" ;;
             *) echo "unknown package: $base" >&2; exit 1 ;;
           esac
 
@@ -56,7 +59,7 @@ jobs:
   publish:
     needs: verify
     runs-on: ubuntu-latest
-    environment: ${{ (inputs.package == 'switch' || startsWith(github.ref_name, 'switch-v')) && 'pypi-switch' || 'pypi' }}
+    environment: ${{ (inputs.package == 'switch' || startsWith(github.ref_name, 'switch-v')) && 'pypi-switch' || (inputs.package == 'office' || startsWith(github.ref_name, 'office-v')) && 'pypi-office' || 'pypi' }}
     permissions:
       id-token: write
       contents: read
