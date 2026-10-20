@@ -19,9 +19,10 @@
 - **CI** — Ruff lint job added (`astral-sh/ruff-action`, pinned);
   monitoring daemons keep documented fail-soft ignores by design.
 - **Publish** — consolidated `pypi-publish.yml` builds and uploads
-  `devin-fanout` and `devin-switch` via PyPI Trusted Publishing (OIDC),
-  tag `*-v*` or manual dispatch. `devin-bridge` (npm/GPR) keeps its own
-  workflows.
+  `devin-fanout`, `devin-switch` and `devin-office` via PyPI Trusted
+  Publishing (OIDC), tag `*-v*` or manual dispatch; the publish
+  environment follows the resolved package. `devin-bridge` (npm/GPR)
+  keeps its own workflows.
 
 ## 2026-10 (F4 consolidation)
 

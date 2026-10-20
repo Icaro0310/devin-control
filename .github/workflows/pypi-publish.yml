@@ -30,6 +30,7 @@ jobs:
     outputs:
       dir: ${{ steps.pkg.outputs.dir }}
       mod: ${{ steps.pkg.outputs.mod }}
+      publisher: ${{ steps.pkg.outputs.publisher }}
     steps:
       - id: pkg
         env:
@@ -39,11 +40,14 @@ jobs:
           base="${SEL:-${REF%%-v*}}"
           case "$base" in
               orchestrator) echo "dir=packages/orchestrator" >> "$GITHUB_OUTPUT"
-                            echo "mod=devin_orchestrator" >> "$GITHUB_OUTPUT" ;;
+                            echo "mod=devin_orchestrator" >> "$GITHUB_OUTPUT"
+                            echo "publisher=pypi" >> "$GITHUB_OUTPUT" ;;
                   switch) echo "dir=packages/switch" >> "$GITHUB_OUTPUT"
-                          echo "mod=devin_switch" >> "$GITHUB_OUTPUT" ;;
+                          echo "mod=devin_switch" >> "$GITHUB_OUTPUT"
+                          echo "publisher=pypi-switch" >> "$GITHUB_OUTPUT" ;;
                   office) echo "dir=packages/office" >> "$GITHUB_OUTPUT"
-                          echo "mod=devin_office" >> "$GITHUB_OUTPUT" ;;
+                          echo "mod=devin_office" >> "$GITHUB_OUTPUT"
+                          echo "publisher=pypi-office" >> "$GITHUB_OUTPUT" ;;
             *) echo "unknown package: $base" >&2; exit 1 ;;
           esac
 
@@ -57,9 +61,12 @@ jobs:
       python-version: "3.12"
 
   publish:
-    needs: verify
+    # needs.resolve makes the environment follow the resolved package —
+    # a dispatch on a foreign tag ref can never pick the wrong
+    # trusted-publisher env again.
+    needs: [resolve, verify]
     runs-on: ubuntu-latest
-    environment: ${{ (inputs.package == 'switch' || startsWith(github.ref_name, 'switch-v')) && 'pypi-switch' || (inputs.package == 'office' || startsWith(github.ref_name, 'office-v')) && 'pypi-office' || 'pypi' }}
+    environment: ${{ needs.resolve.outputs.publisher }}
     permissions:
       id-token: write
       contents: read
