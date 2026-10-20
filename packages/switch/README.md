@@ -199,7 +199,8 @@ installed with
 `devin plugins install Icaro0310/devin-control#packages/switch/adapters` —
 it ships in the repo, not inside the wheel. The manifest launches the
 server through `uvx --from 'devin-switch[mcp]' devin-switch-mcp`, which
-resolves once the first PyPI release ships; until then run a
+resolves from PyPI as of 0.1.1 (the 0.1.0 wheel predates both the
+entry point and the `mcp` extra). On 0.1.0 or a source checkout, run a
 source-installed `devin-switch-mcp` directly or point a local manifest
 copy at the checkout (`uvx --from './packages/switch[mcp]'
 devin-switch-mcp`).
