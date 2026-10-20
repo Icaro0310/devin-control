@@ -31,6 +31,11 @@ jobs:
       dir: ${{ steps.pkg.outputs.dir }}
       mod: ${{ steps.pkg.outputs.mod }}
       publisher: ${{ steps.pkg.outputs.publisher }}
+      # dist/cli feed the post-publish smoke leg below: dist is the PyPI
+      # project name (orchestrator ships as devin-fanout), cli is the
+      # console script the smoke probes.
+      dist: ${{ steps.pkg.outputs.dist }}
+      cli: ${{ steps.pkg.outputs.cli }}
     steps:
       - id: pkg
         env:
@@ -41,13 +46,19 @@ jobs:
           case "$base" in
               orchestrator) echo "dir=packages/orchestrator" >> "$GITHUB_OUTPUT"
                             echo "mod=devin_orchestrator" >> "$GITHUB_OUTPUT"
-                            echo "publisher=pypi" >> "$GITHUB_OUTPUT" ;;
+                            echo "publisher=pypi" >> "$GITHUB_OUTPUT"
+                            echo "dist=devin-fanout" >> "$GITHUB_OUTPUT"
+                            echo "cli=devin-orchestrator" >> "$GITHUB_OUTPUT" ;;
                   switch) echo "dir=packages/switch" >> "$GITHUB_OUTPUT"
                           echo "mod=devin_switch" >> "$GITHUB_OUTPUT"
-                          echo "publisher=pypi-switch" >> "$GITHUB_OUTPUT" ;;
+                          echo "publisher=pypi-switch" >> "$GITHUB_OUTPUT"
+                          echo "dist=devin-switch" >> "$GITHUB_OUTPUT"
+                          echo "cli=devin-switch" >> "$GITHUB_OUTPUT" ;;
                   office) echo "dir=packages/office" >> "$GITHUB_OUTPUT"
                           echo "mod=devin_office" >> "$GITHUB_OUTPUT"
-                          echo "publisher=pypi-office" >> "$GITHUB_OUTPUT" ;;
+                          echo "publisher=pypi-office" >> "$GITHUB_OUTPUT"
+                          echo "dist=devin-office" >> "$GITHUB_OUTPUT"
+                          echo "cli=devin-office" >> "$GITHUB_OUTPUT" ;;
             *) echo "unknown package: $base" >&2; exit 1 ;;
           esac
 
@@ -95,3 +106,58 @@ jobs:
           # There is no token fallback — do not reintroduce PYPI_API_TOKEN.
           packages-dir: dist
           skip-existing: true
+
+  # Post-publish smoke: the index must serve the exact version that was
+  # uploaded and a clean install must run its console script — a green
+  # upload with a broken wheel fails here instead of shipping silently.
+  # Neutral environment (no trusted-publisher env): smoke needs network
+  # only, no id-token.
+  smoke:
+    needs: [resolve, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: none
+    steps:
+      # The version comes from the wheel that was actually uploaded —
+      # dispatch runs carry no tag to parse it from.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist/
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Wait for PyPI to serve the published wheel
+        id: pypi
+        env:
+          DIST: ${{ needs.resolve.outputs.dist }}
+        run: |
+          ver=$(python -c "import pathlib; print(next(pathlib.Path('dist').glob('*.whl')).name.split('-')[1])")
+          whl=$(basename dist/*.whl)
+          echo "ver=$ver" >> "$GITHUB_OUTPUT"
+          # Poll for the wheel filename itself, not the version string:
+          # a version-only match also accepts a lone sdist and would smoke
+          # green while the verified wheel never landed on the index.
+          echo "waiting for $whl on https://pypi.org/simple/$DIST/"
+          for i in $(seq 1 32); do
+            if curl -fsSL "https://pypi.org/simple/$DIST/" | grep -qF -- "$whl"; then
+              echo "served after ~$((i * 15))s of polling"
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "::error::$whl never appeared on PyPI within ~8m — publish looks broken"
+          exit 1
+      - name: Install the published dist and run its CLI
+        env:
+          DIST: ${{ needs.resolve.outputs.dist }}
+          CLI: ${{ needs.resolve.outputs.cli }}
+          VER: ${{ steps.pypi.outputs.ver }}
+        run: |
+          # venv+pip, not uv tool: no uv install exists in this workflow,
+          # and the throwaway venv keeps the probe fully isolated anyway.
+          python -m venv /tmp/smoke
+          /tmp/smoke/bin/pip install --no-cache-dir "$DIST==$VER"
+          test -x "/tmp/smoke/bin/$CLI"
+          "/tmp/smoke/bin/$CLI" --help >/dev/null
+          echo "smoke ok: $DIST==$VER serves $CLI"

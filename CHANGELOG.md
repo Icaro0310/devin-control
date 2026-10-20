@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **CI** — post-publish install smoke on both distribution channels:
+  `publish-bridge-npm.yml` polls npm for the published bridge version and
+  runs `devin-bridge --help` from a global install; `pypi-publish.yml`
+  gains a neutral-env `smoke` job that waits for the uploaded wheel's
+  filename on the PyPI simple index and runs the resolved console script
+  from a throwaway venv. Smoke runs only on the real publish path, never
+  on the duplicate-skip leg.
 - **Docs** — root README embeds the devin-office demo image under the
   top badge block, linking to the hosted interactive demo and the
   kanban demo.
