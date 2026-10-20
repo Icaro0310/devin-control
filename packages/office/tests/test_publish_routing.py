@@ -1,13 +1,15 @@
 """Publish-routing test for ``pypi-publish.yml``.
 
 The ``resolve`` job maps a package selector (``office-v*`` tag or
-``package=office`` dispatch input) to ``dir``/``mod``/``publisher``
-outputs, and the ``publish`` job picks its trusted-publisher
-environment from that mapping. A wrong mapping either fails the release
-or routes a wheel through the wrong approval environment, so the test
-executes the workflow's own ``base`` expansion and ``case`` block
-through bash instead of re-asserting a copy of it — a routing change in
-the workflow cannot pass unnoticed.
+``package=office`` dispatch input) to ``dir``/``mod``/``publisher`` /
+``dist``/``cli`` outputs: the ``publish`` job picks its trusted-publisher
+environment from that mapping, and the ``smoke`` job polls the ``dist``
+project on PyPI and probes the ``cli`` console script. A wrong mapping
+either fails the release, routes a wheel through the wrong approval
+environment or smokes the wrong distribution, so the test executes the
+workflow's own ``base`` expansion and ``case`` block through bash instead
+of re-asserting a copy of it — a routing change in the workflow cannot
+pass unnoticed.
 
 Run with: ``python -m pytest packages/office/tests/test_publish_routing.py``
 """
@@ -27,10 +29,16 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[3]
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "pypi-publish.yml"
 
+# (dir, mod, publisher, dist, cli) — dist is the PyPI project name
+# (orchestrator publishes as devin-fanout) and cli is the console script
+# the smoke job probes, per each package's pyproject [project.scripts].
 EXPECTED = {
-    "orchestrator": ("packages/orchestrator", "devin_orchestrator", "pypi"),
-    "switch": ("packages/switch", "devin_switch", "pypi-switch"),
-    "office": ("packages/office", "devin_office", "pypi-office"),
+    "orchestrator": ("packages/orchestrator", "devin_orchestrator", "pypi",
+                     "devin-fanout", "devin-orchestrator"),
+    "switch": ("packages/switch", "devin_switch", "pypi-switch",
+               "devin-switch", "devin-switch"),
+    "office": ("packages/office", "devin_office", "pypi-office",
+               "devin-office", "devin-office"),
 }
 
 pytestmark = pytest.mark.skipif(
@@ -63,18 +71,18 @@ def _route(ref: str, sel: str = "") -> dict[str, str]:
 
 @pytest.mark.parametrize("pkg", sorted(EXPECTED))
 def test_tag_route(pkg):
-    """``<pkg>-vX.Y.Z`` tag resolves dir, module and publisher."""
+    """``<pkg>-vX.Y.Z`` tag resolves dir, module, publisher, dist and cli."""
     out = _route(f"{pkg}-v0.0.0")
-    want_dir, want_mod, want_pub = EXPECTED[pkg]
-    assert (out["dir"], out["mod"], out["publisher"]) == (want_dir, want_mod, want_pub)
+    assert (out["dir"], out["mod"], out["publisher"],
+            out["dist"], out["cli"]) == EXPECTED[pkg]
 
 
 @pytest.mark.parametrize("pkg", sorted(EXPECTED))
 def test_dispatch_route(pkg):
     """``package=<pkg>`` dispatch resolves the same mapping as its tag."""
     out = _route("refs/heads/main", sel=pkg)
-    want_dir, want_mod, want_pub = EXPECTED[pkg]
-    assert (out["dir"], out["mod"], out["publisher"]) == (want_dir, want_mod, want_pub)
+    assert (out["dir"], out["mod"], out["publisher"],
+            out["dist"], out["cli"]) == EXPECTED[pkg]
 
 
 def test_dispatch_on_foreign_tag_keeps_selected_publisher():
@@ -87,6 +95,8 @@ def test_dispatch_on_foreign_tag_keeps_selected_publisher():
     assert out["dir"] == "packages/office"
     assert out["mod"] == "devin_office"
     assert out["publisher"] == "pypi-office"
+    assert out["dist"] == "devin-office"
+    assert out["cli"] == "devin-office"
 
 
 def test_unknown_package_fails_closed():

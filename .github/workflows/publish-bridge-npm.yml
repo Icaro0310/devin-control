@@ -78,3 +78,24 @@ jobs:
         run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # Post-publish smoke: the registry must serve the version and the
+      # installed bin must run — a green publish with a broken tarball
+      # fails here instead of shipping silently. Skipped on the dup path,
+      # same as publish itself.
+      - name: Smoke the published package
+        if: steps.dup.outputs.dup != 'true'
+        working-directory: packages/bridge
+        run: |
+          v=$(node -p "require('./package.json').version")
+          pkg="@icaro0310/devin-bridge@$v"
+          seen=""
+          for i in $(seq 1 20); do
+            seen=$(npm view "$pkg" version 2>/dev/null || true)
+            [ "$seen" = "$v" ] && break
+            sleep 15
+          done
+          [ "$seen" = "$v" ] || { echo "::error::$pkg never appeared on npmjs.com within ~5m"; exit 1; }
+          npm install --global "$pkg"
+          devin-bridge --help >/dev/null
+          echo "smoke ok: $pkg installs and devin-bridge runs"
