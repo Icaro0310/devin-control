@@ -13,8 +13,8 @@ name: release-bridge
 # npm legs: publish-bridge-npm.yml / publish-bridge-gpr.yml also fire on
 # release:published, but a release minted by GITHUB_TOKEN emits no such
 # event — the release job dispatches both explicitly on the tag.
-# pypi-publish.yml is NOT dispatched: its `package` input only accepts
-# orchestrator/switch and the bridge is a Node package.
+# pypi-publish.yml is NOT dispatched: the bridge is a Node package, so
+# the PyPI fan-out (orchestrator/switch/office) does not apply.
 #
 # Marketplace: needs repo vars AZURE_CLIENT_ID / AZURE_TENANT_ID and a
 # federated credential `gh-devin-control-release` on the
