@@ -18,6 +18,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -33,7 +34,8 @@ EXPECTED = {
 }
 
 pytestmark = pytest.mark.skipif(
-    shutil.which("bash") is None, reason="routing test needs bash to run the workflow's case block"
+    sys.platform == "win32" or shutil.which("bash") is None,
+    reason="routing test needs POSIX bash; on Windows `bash` may resolve to WSL",
 )
 
 
