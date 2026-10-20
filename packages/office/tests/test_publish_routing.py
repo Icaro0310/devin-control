@@ -109,3 +109,88 @@ def test_unknown_package_fails_closed():
     os.unlink(out_file)
     assert proc.returncode != 0
     assert "unknown package" in proc.stderr
+
+
+# --- smoke job: PyPI index polling -----------------------------------------
+
+
+def _poll_block() -> str:
+    """Extract the ``run:`` body of the PyPI wheel-polling step verbatim."""
+    text = WORKFLOW.read_text(encoding="utf-8")
+    m = re.search(
+        r"name: Wait for PyPI to serve the published wheel.*?run: \|(.*?)(?=\n      -|\Z)",
+        text,
+        re.DOTALL,
+    )
+    assert m is not None, "wheel-polling step not found in pypi-publish.yml"
+    return "\n".join(line[8:] for line in m.group(1).splitlines())
+
+
+def _run_poll(tmp_path: Path, index_html: str) -> subprocess.CompletedProcess[str]:
+    """Run the workflow's real polling loop against a stubbed curl index."""
+    wheel = "devin_office-0.1.0-py3-none-any.whl"
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / wheel).write_bytes(b"fake")
+    (dist / "devin_office-0.1.0.tar.gz").write_bytes(b"fake")
+    stub_dir = tmp_path / "stubbin"
+    stub_dir.mkdir()
+    (stub_dir / "curl").write_text(
+        f"#!/usr/bin/env bash\nprintf '%s' {index_html!r}\n", encoding="utf-8"
+    )
+    (stub_dir / "sleep").write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    # The workflow block calls `python` (provided by setup-python in CI);
+    # delegate to the local interpreter when the bare name is absent.
+    if shutil.which("python") is None:
+        (stub_dir / "python").write_text(
+            f"#!/usr/bin/env bash\nexec {sys.executable} \"$@\"\n", encoding="utf-8"
+        )
+    for stub in stub_dir.iterdir():
+        os.chmod(stub, 0o755)
+    fd, out_file = tempfile.mkstemp(prefix="ghout-")
+    os.close(fd)
+    env = dict(
+        os.environ,
+        DIST="devin-office",
+        GITHUB_OUTPUT=out_file,
+        PATH=f"{stub_dir}:{os.environ['PATH']}",
+    )
+    proc = subprocess.run(
+        ["bash", "-c", _poll_block()],
+        check=False, capture_output=True, text=True, env=env, cwd=tmp_path,
+    )
+    os.unlink(out_file)
+    return proc
+
+
+def _index(*hrefs: str) -> str:
+    links = "".join(f'<a href="https://files/{h}">{h}</a><br/>' for h in hrefs)
+    return f"<!DOCTYPE html><html><body>{links}</body></html>"
+
+
+def test_poll_passes_when_the_wheel_is_served(tmp_path: Path):
+    """Wheel filename on the simple index → poll exits green."""
+    proc = _run_poll(
+        tmp_path,
+        _index(
+            "devin_office-0.1.0-py3-none-any.whl#sha256=abc",
+            "devin_office-0.1.0.tar.gz",
+        ),
+    )
+    assert proc.returncode == 0, proc.stderr + proc.stdout
+
+
+def test_poll_fails_when_only_the_sdist_is_served(tmp_path: Path):
+    """sdist alone must not satisfy the poll — the verified artifact is the
+    wheel, and a version-only regex would pass on the sdist alone."""
+    proc = _run_poll(tmp_path, _index("devin_office-0.1.0.tar.gz"))
+    assert proc.returncode == 1
+    assert "never appeared on PyPI" in proc.stdout
+
+
+def test_poll_fails_on_a_different_version(tmp_path: Path):
+    """An older wheel on the index is not this publish."""
+    proc = _run_poll(
+        tmp_path, _index("devin_office-0.0.9-py3-none-any.whl")
+    )
+    assert proc.returncode == 1

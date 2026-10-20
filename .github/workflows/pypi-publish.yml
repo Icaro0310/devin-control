@@ -127,22 +127,26 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - name: Wait for PyPI to serve the published version
+      - name: Wait for PyPI to serve the published wheel
         id: pypi
         env:
           DIST: ${{ needs.resolve.outputs.dist }}
         run: |
           ver=$(python -c "import pathlib; print(next(pathlib.Path('dist').glob('*.whl')).name.split('-')[1])")
+          whl=$(basename dist/*.whl)
           echo "ver=$ver" >> "$GITHUB_OUTPUT"
-          echo "waiting for $DIST==$ver on https://pypi.org/simple/$DIST/"
+          # Poll for the wheel filename itself, not the version string:
+          # a version-only match also accepts a lone sdist and would smoke
+          # green while the verified wheel never landed on the index.
+          echo "waiting for $whl on https://pypi.org/simple/$DIST/"
           for i in $(seq 1 32); do
-            if curl -fsSL "https://pypi.org/simple/$DIST/" | grep -qE -- "-${ver//./\\.}[-.]"; then
+            if curl -fsSL "https://pypi.org/simple/$DIST/" | grep -qF -- "$whl"; then
               echo "served after ~$((i * 15))s of polling"
               exit 0
             fi
             sleep 15
           done
-          echo "::error::$DIST $ver never appeared on PyPI within ~8m — publish looks broken"
+          echo "::error::$whl never appeared on PyPI within ~8m — publish looks broken"
           exit 1
       - name: Install the published dist and run its CLI
         env:
