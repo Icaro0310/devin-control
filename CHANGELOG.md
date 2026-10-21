@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **CI** — `auto-approve` repinned to the shared `pr-approve` gate at
+  v1.6 (was v1.3) and gains the `pull_request_review_comment` trigger,
+  so fix-commit replies re-evaluate the gate on the same head;
+  `packages/bridge/tests/auto-approve-workflow.test.js` pins the caller
+  contract.
 - **CI** — post-publish install smoke on both distribution channels:
   `publish-bridge-npm.yml` polls npm for the published bridge version and
   runs `devin-bridge --help` from a global install; `pypi-publish.yml`
