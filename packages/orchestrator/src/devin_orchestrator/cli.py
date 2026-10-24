@@ -10,6 +10,7 @@ from pathlib import Path
 
 from devin_orchestrator import registry as plan_registry
 from devin_orchestrator.planner import estimate_cost, plan_task, plan_task_json
+from devin_orchestrator.signals import collect_signals
 
 SCHEMA_NAMES = ("spec", "plan")
 
@@ -106,6 +107,11 @@ def main(argv: list[str] | None = None) -> int:
     hist_p.add_argument("--registry", type=Path,
                         help="override plans.jsonl location")
     hist_p.add_argument("--json", action="store_true")
+    sub.add_parser(
+        "signals",
+        help="print the machine signals the planner honours "
+        "(ram_pressure, inside_worker) as JSON",
+    )
     args = parser.parse_args(argv)
 
     if args.command == "schema":
@@ -154,6 +160,10 @@ def main(argv: list[str] | None = None) -> int:
                               sorted(summary["by_outcome"].items())
                               ) if summary["by_outcome"] else "none")
             print(f"({summary['note']})")
+        return 0
+
+    if args.command == "signals":
+        print(json.dumps(collect_signals(), indent=2))
         return 0
 
     raw = args.spec if args.spec is not None else args.spec_file.read_text(

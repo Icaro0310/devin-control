@@ -77,7 +77,15 @@ execute.
 ```bash
 devin-orchestrator plan '<spec>' --explain   # human-readable decision walkthrough
 devin-orchestrator schema spec|plan          # print the published JSON Schemas
+devin-orchestrator signals                   # the machine signals the planner honours
 ```
+
+`signals` prints what `collect_signals()` measures on this host:
+`ram_pressure` (MemAvailable below a floor scaled to MemTotal),
+`inside_worker`, and the raw RAM figures. A `null` value means the host
+could not be measured, not that it is healthy. When `ram_pressure` is
+true, `plan_task` caps fan-out at one worker and says so in
+`warnings`; every plan echoes the signals it saw under `signals`.
 
 ### `--cost-estimate`
 
