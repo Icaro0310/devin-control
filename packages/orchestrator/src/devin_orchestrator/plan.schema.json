@@ -31,6 +31,16 @@
         "nesting": {"type": "string"}
       }
     },
+    "signals": {
+      "type": "object",
+      "description": "Machine signals collected by signals.collect_signals at plan time (ram_pressure, inside_worker, ram_*_mb). A null ram_pressure means the host could not be measured, not that it is healthy.",
+      "properties": {
+        "inside_worker": {"type": "boolean"},
+        "ram_total_mb": {"type": ["integer", "null"]},
+        "ram_available_mb": {"type": ["integer", "null"]},
+        "ram_pressure": {"type": ["boolean", "null"]}
+      }
+    },
     "cost_estimate": {
       "type": "object",
       "description": "Present only with --cost-estimate: per-unit duration estimate in minutes (planning label, not billing).",

@@ -13,6 +13,9 @@ decides *whether* fan-out is warranted and enforces hard limits:
 - nested fan-out (called from inside a worker) -> 0 workers + warning
 - every plan with workers carries collect=True: the parent MUST gather
   results via read_subagent / completion notifications before reporting.
+- machine signals (``signals.collect_signals``) bound the plan too:
+  ``ram_pressure`` caps fan-out at one worker. An unreadable signal is
+  absent evidence, never clearance.
 
 The plan is data only. It contains no file paths, no repo URLs and no
 commands — the planner cannot create repositories or perform I/O.
@@ -25,6 +28,8 @@ import math
 import os
 from dataclasses import dataclass, field
 from typing import Any
+
+from devin_orchestrator.signals import collect_signals
 
 MAX_WORKERS = 3
 DEFAULT_READ_PROFILE = "subagent_explore"
@@ -63,6 +68,7 @@ class WorkerPlan:
     nesting_blocked: bool = False
     warnings: list[str] = field(default_factory=list)
     file_collisions: list[dict[str, Any]] = field(default_factory=list)
+    signals: dict[str, Any] | None = None  # machine signals in force
 
     def to_dict(self) -> dict[str, Any]:
         out = {
@@ -77,6 +83,8 @@ class WorkerPlan:
         }
         if self.file_collisions:
             out["file_collisions"] = self.file_collisions
+        if self.signals is not None:
+            out["signals"] = self.signals
         return out
 
 
@@ -169,7 +177,11 @@ def file_collisions(units_detail: list[dict[str, Any]] | None) -> list[dict[str,
     return out
 
 
-def plan_task(spec: dict[str, Any], env: dict[str, str] | None = None) -> WorkerPlan:
+def plan_task(
+    spec: dict[str, Any],
+    env: dict[str, str] | None = None,
+    signals: dict[str, Any] | None = None,
+) -> WorkerPlan:
     """Decide how many background workers a task should fan out to.
 
     spec keys:
@@ -180,9 +192,18 @@ def plan_task(spec: dict[str, Any], env: dict[str, str] | None = None) -> Worker
       summary            str — short task label for the rationale
 
     env: injectable environment (tests); defaults to os.environ.
+    signals: machine signals from ``signals.collect_signals``; None
+        collects them live. ``ram_pressure`` caps fan-out at 1 worker —
+        a constrained host is a reason to stay small, never a reason to
+        fan out harder.
     """
     task = _normalise_spec(spec)
+    if signals is None:
+        signals = collect_signals(env)
     cap = _max_workers(env)
+    pressure = signals.get("ram_pressure") is True
+    if pressure:
+        cap = min(cap, 1)
 
     if _inside_worker(env):
         return WorkerPlan(
@@ -203,6 +224,7 @@ def plan_task(spec: dict[str, Any], env: dict[str, str] | None = None) -> Worker
             workers=0,
             mode="none",
             rationale=f"{kind}/{scope} tasks run inline — fan-out overhead is not worth it",
+            signals=signals,
         )
 
     # 2. Review/research of a single area, or single-unit work: stay inline
@@ -212,6 +234,7 @@ def plan_task(spec: dict[str, Any], env: dict[str, str] | None = None) -> Worker
             workers=0,
             mode="none",
             rationale="single work unit — inline execution keeps the session simple",
+            signals=signals,
         )
 
     # 3. Fan out: one worker per independent unit, capped.
@@ -242,6 +265,12 @@ def plan_task(spec: dict[str, Any], env: dict[str, str] | None = None) -> Worker
             f"{len(pair_ids)} unit pair(s) — units are NOT disjoint; "
             "see file_collisions"
         )
+    if pressure:
+        avail = signals.get("ram_available_mb")
+        warnings.append(
+            "ram_pressure signal active — host RAM constrained "
+            f"({avail} MB available); fan-out capped at 1 worker"
+        )
 
     return WorkerPlan(
         workers=count,
@@ -251,6 +280,7 @@ def plan_task(spec: dict[str, Any], env: dict[str, str] | None = None) -> Worker
         collect=True,
         warnings=warnings,
         file_collisions=collisions,
+        signals=signals,
     )
 
 
