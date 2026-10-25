@@ -69,6 +69,7 @@ class WorkerPlan:
     warnings: list[str] = field(default_factory=list)
     file_collisions: list[dict[str, Any]] = field(default_factory=list)
     signals: dict[str, Any] | None = None  # machine signals in force
+    units: list[dict[str, Any]] | None = None  # DAG-ordered trigger units
 
     def to_dict(self) -> dict[str, Any]:
         out = {
@@ -85,6 +86,8 @@ class WorkerPlan:
             out["file_collisions"] = self.file_collisions
         if self.signals is not None:
             out["signals"] = self.signals
+        if self.units is not None:
+            out["units"] = self.units
         return out
 
 

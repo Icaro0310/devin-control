@@ -41,6 +41,19 @@
         "ram_pressure": {"type": ["boolean", "null"]}
       }
     },
+    "units": {
+      "type": "array",
+      "description": "Present only with `plan --from-triggers`: the enabled trigger manifests resolved into DAG order (`after` + `requires.artifacts` edges). Each unit is one work item for the fan-out; 'after' lists its resolved dependencies inside the unit set. Manifest action commands are never propagated — units are data only.",
+      "items": {
+        "type": "object",
+        "required": ["id", "event", "after"],
+        "properties": {
+          "id": {"type": "string"},
+          "event": {"type": ["string", "null"]},
+          "after": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
     "cost_estimate": {
       "type": "object",
       "description": "Present only with --cost-estimate: per-unit duration estimate in minutes (planning label, not billing).",
