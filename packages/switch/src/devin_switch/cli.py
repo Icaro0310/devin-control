@@ -11,6 +11,10 @@
 - ``devin-switch import <file> [--name NAME] [--force]`` — DRY-RUN by
   default; ``--apply`` creates ``profiles/<name>/`` from a validated
   archive
+- ``devin-switch apply <profile>`` — the machine-readable contract:
+  same dry-run/``--apply`` semantics as ``use``, but stdout is always
+  the ``devin-switch/apply@1`` JSON envelope (success and failure) so
+  callers like devin-devkit never scrape human output
 - ``devin-switch doctor`` — config sanity + closest-profile ranking
 
 Exit codes: 0 on success / clean dry-run; 1 on any error (unknown profile,
@@ -22,12 +26,13 @@ touched, ever.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from devin_switch import engine, journal
+from devin_switch import api, engine, journal
 from devin_switch import paths as paths_mod
 from devin_switch.health import check_config_files, rank_profiles
 from devin_switch.paths import Roots, target_for
@@ -159,6 +164,15 @@ def build_parser() -> argparse.ArgumentParser:
         "(only with --apply)",
     )
 
+    p_apply = sub.add_parser(
+        "apply",
+        help="apply a profile and print the machine-readable JSON "
+        "contract (the devin-devkit handshake); dry-run unless --apply",
+    )
+    _add_roots(p_apply)
+    _add_apply(p_apply)
+    p_apply.add_argument("profile")
+
     p_doc = sub.add_parser(
         "doctor",
         help="config sanity checks + closest-profile ranking (read-only)",
@@ -169,18 +183,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _roots(args: argparse.Namespace) -> Roots:
-    data_dir = (args.data_dir or paths_mod.default_data_dir()).expanduser()
-    if args.config_dir is not None:
-        config_dir = args.config_dir.expanduser()
-    elif args.data_dir is not None:
-        # single-root mode: one dir holds both data files and User/
-        config_dir = data_dir
-    else:
-        config_dir = paths_mod.default_config_dir()
-    return Roots(
-        data_dir=data_dir,
-        config_dir=config_dir,
-        profiles_dir=paths_mod.resolve_profiles_dir(args.profiles_dir),
+    return api.resolve_roots(
+        args.data_dir, args.config_dir, args.profiles_dir
     )
 
 
@@ -424,6 +428,35 @@ def cmd_import(
     return 0
 
 
+def cmd_apply(roots: Roots, name: str, apply: bool) -> int:
+    """The devin-devkit handshake: stdout is always one JSON envelope.
+
+    Success and failure both serialize as ``devin-switch/apply@1`` —
+    callers check ``ok``/``error_type`` and the exit code, never stderr.
+    A human-readable ``error:`` line still goes to stderr on failure so
+    the stream isn't silent in logs.
+    """
+    try:
+        payload = api.apply_profile(name, roots, apply=apply)
+    except api.ManifestError as exc:
+        payload = api.error_envelope(name, "invalid_manifest", str(exc))
+    except ProfileError as exc:
+        payload = api.error_envelope(name, "unknown_profile", str(exc))
+    except engine.SnapshotError as exc:
+        payload = api.error_envelope(
+            name,
+            "snapshot_failed",
+            str(exc),
+            problems=list(exc.problems),
+            backup_dir=str(exc.backup_dir),
+        )
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    if not payload["ok"]:
+        print(f"error: {payload['error']}", file=sys.stderr)
+        return 1
+    return 0
+
+
 def cmd_doctor(roots: Roots) -> int:
     results = check_config_files(roots)
     worst = 0
@@ -475,6 +508,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return cmd_import(
                 roots, args.file, args.name, args.force, args.apply
             )
+        if args.command == "apply":
+            return cmd_apply(roots, args.profile, args.apply)
         if args.command == "doctor":
             return cmd_doctor(roots)
     except (ProfileError, TransferError) as exc:

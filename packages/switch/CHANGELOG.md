@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `devin-switch apply <profile>` — the machine-readable apply contract
+  for ecosystem callers (devin-devkit): stdout is always a single
+  `devin-switch/apply@1` JSON envelope — the plan on dry-run, the result
+  on `--apply`, `ok`/`error_type`/`error` on failure — over the same
+  snapshot → verify → write → journal → rollback path as `use`. The
+  write side fails closed on a malformed `profile.json`
+  (`invalid_manifest`), where the read commands degrade to empty
+  metadata. The same contract is importable as
+  `devin_switch.apply_profile(name, roots, apply=True)`
+  (`devin_switch/api.py`, re-exported at the package root); root
+  resolution moved to `devin_switch.api.resolve_roots`, which the CLI's
+  `_roots` now delegates to.
+
 ## [0.1.1] - 2026-10-20
 
 ### Fixed
