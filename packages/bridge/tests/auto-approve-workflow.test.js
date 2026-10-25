@@ -1,6 +1,6 @@
 // Static assertions for .github/workflows/auto-approve.yml. The
 // caller is thin by design (triggers + pin to the reusable pr-approve
-// gate in devin-powerups), so these tests pin the v1.6 caller
+// gate in devin-powerups), so these tests pin the v1.9 caller
 // contract — the gate version, the pull_request_review_comment
 // trigger that re-evaluates the gate on fix-commit replies, and the
 // scoped job permissions. Text assertions are deliberate — the repo
@@ -14,12 +14,12 @@ import { join } from 'node:path';
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const wf = (name) => readFileSync(join(root, '.github', 'workflows', name), 'utf8');
 
-test('auto-approve: gate pin is exactly v1.6', () => {
+test('auto-approve: gate pin is exactly v1.9', () => {
   const y = wf('auto-approve.yml');
   assert.match(
     y,
-    /uses: Icaro0310\/devin-powerups\/\.github\/workflows\/pr-approve\.yml@v1\.6/,
-    'v1.6 adds cross-repo fix anchors and gate-eligible concurrency; a silent downgrade must fail here',
+    /uses: Icaro0310\/devin-powerups\/\.github\/workflows\/pr-approve\.yml@v1\.9/,
+    'v1.9 fixes the self-cancel (successful approval no longer renders as a failed check) and adds fresh-head recheck + paginated dedup; a silent downgrade must fail here',
   );
 });
 

@@ -9,6 +9,11 @@
   integer `ts`), `/` HTML probe, store isolation via `OFFICE_*`/`HOME`/
   XDG overrides, and trap-based cleanup.
 - **CI** — `auto-approve` repinned to the shared `pr-approve` gate at
+  v1.9 (was v1.6): the self-cancel fix (a successful approval no longer
+  renders as a failed check), the fresh-head recheck, and paginated
+  dedup; `packages/bridge/tests/auto-approve-workflow.test.js` pins the
+  caller contract.
+- **CI** — `auto-approve` repinned to the shared `pr-approve` gate at
   v1.6 (was v1.3) and gains the `pull_request_review_comment` trigger,
   so fix-commit replies re-evaluate the gate on the same head;
   `packages/bridge/tests/auto-approve-workflow.test.js` pins the caller
