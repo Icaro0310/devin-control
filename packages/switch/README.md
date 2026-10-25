@@ -87,6 +87,8 @@ devin-switch export personal --out personal.json
 devin-switch import personal.json       # DRY-RUN: validate + preview only
 devin-switch import personal.json --apply            # create profiles/personal/
 devin-switch import personal.json --apply --name copy --force
+devin-switch apply personal             # DRY-RUN as JSON (machine contract)
+devin-switch apply personal --apply     # JSON result; same snapshot+verify path
 devin-switch doctor                     # config sanity + closest profile
 ```
 
@@ -173,10 +175,68 @@ restores the snapshot (and deletes files the switch created), then
 appends a `rollback` entry — the backup is *not* consumed, so you can
 switch forward again afterwards.
 
+## Machine-readable apply (devin-devkit contract)
+
+`devin-switch apply <profile>` runs the exact same
+plan → snapshot → verify → write → journal path as `use`, with one
+difference that matters to callers: **stdout is always a single JSON
+document** — on dry-run, on a real apply and on failure — so a wrapper
+never scrapes human output. The dry-run-by-default rule is unchanged;
+`--apply` writes. This is the surface `devin-devkit` consumes when its
+`apply` unifies tool install with config-profile selection.
+
+```bash
+devin-switch apply work            # JSON plan — writes nothing
+devin-switch apply work --apply    # JSON result — files actually swapped
+```
+
+Success envelope (`schema: "devin-switch/apply@1"`):
+
+```json
+{
+  "schema": "devin-switch/apply@1",
+  "ok": true,
+  "profile": "work",
+  "dry_run": false,
+  "actions": {"create": 1, "modify": 3},
+  "files": [
+    {"rel": "config.json", "target": "/abs/path", "action": "modify",
+     "skip_reason": ""}
+  ],
+  "files_changed": ["config.json"],
+  "skipped": [],
+  "backup_dir": "/abs/.devin-ecosystem/switch-backups/<ts>",
+  "journal": "/abs/.devin-ecosystem/switch-journal.jsonl",
+  "rollback": "devin-switch rollback --apply"
+}
+```
+
+Failures keep the shape: `ok: false`, an `error_type` —
+`unknown_profile`, `invalid_manifest` (a `profile.json` that does not
+parse fails closed here, where the read commands degrade to empty
+metadata) or `snapshot_failed` — plus a human `error` string. The exit
+code is still `1`, and a plain `error: …` line goes to stderr for logs;
+stdout stays parseable either way.
+
+**The handshake** (implemented devkit-side, in its repo): `devin-devkit
+apply <profile>` resolves the profile in its own manifest — following
+`alias_of` chains — installs the tool list, then shells out to
+`devin-switch apply <resolved-name> --apply` to select the matching
+config profile. The switch profile is looked up by that resolved name,
+so a devkit profile `operations` applies `profiles/operations/`; the
+name mapping and manifest resolution live in devin-devkit.
+
+Same-env Python callers get the identical contract from
+`devin_switch.apply_profile(name, roots, apply=True)`
+(`devin_switch/api.py`, re-exported at the package root): it returns the
+envelope as a dict and raises `ProfileError` → `unknown_profile`,
+`ManifestError` → `invalid_manifest` and `SnapshotError` →
+`snapshot_failed` for the failure modes above.
+
 ## Development
 
 ```bash
-python -m pytest            # 89 tests, all on synthetic tmp-dir fixtures
+python -m pytest            # 128 tests, all on synthetic tmp-dir fixtures
 python -m devin_switch.cli doctor --profiles-dir profiles
 ```
 
