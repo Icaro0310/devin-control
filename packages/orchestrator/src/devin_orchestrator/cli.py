@@ -8,8 +8,13 @@ import sys
 from importlib.resources import files
 from pathlib import Path
 
+from devin_orchestrator import manifests as trigger_manifests
 from devin_orchestrator import registry as plan_registry
-from devin_orchestrator.planner import estimate_cost, plan_task, plan_task_json
+from devin_orchestrator.planner import (
+    WorkerPlan,
+    estimate_cost,
+    plan_task,
+)
 from devin_orchestrator.signals import collect_signals
 
 SCHEMA_NAMES = ("spec", "plan")
@@ -22,10 +27,8 @@ def _load_spec(spec_json: str) -> dict:
         raise ValueError(f"invalid task spec JSON: {exc}") from exc
 
 
-def _explain(spec_json: str, cost: bool = False) -> str:
+def _explain(spec: dict, plan: WorkerPlan, cost: bool = False) -> str:
     """Human-readable walkthrough of the plan decision (OR-2)."""
-    spec = _load_spec(spec_json)
-    plan = plan_task(spec)
     lines = [f"Plan: {plan.workers} worker(s), mode={plan.mode}"]
     if plan.nesting_blocked:
         lines.append("- this session is already inside a worker; nesting is forbidden")
@@ -33,6 +36,10 @@ def _explain(spec_json: str, cost: bool = False) -> str:
         lines.append(f"- {plan.rationale}")
     if plan.profiles:
         lines.append(f"- profile(s): {', '.join(sorted(set(plan.profiles)))}")
+    if plan.units:
+        lines.append(
+            "- trigger DAG order: "
+            + " -> ".join(u["id"] for u in plan.units))
     if plan.collect:
         lines.append("- collect=true: gather every worker result before reporting")
     for w in plan.warnings:
@@ -64,6 +71,17 @@ def main(argv: list[str] | None = None) -> int:
     group = plan_p.add_mutually_exclusive_group(required=True)
     group.add_argument("spec", nargs="?", help="task spec as a JSON string")
     group.add_argument("--spec-file", type=Path, help="path to a JSON task spec")
+    group.add_argument(
+        "--from-triggers", type=Path, metavar="DIR",
+        help="read PAS trigger manifests (*.{yaml,yml,json}) from DIR, "
+        "resolve their after/requires.artifacts DAG, and plan fan-out "
+        "over the DAG-ordered units",
+    )
+    plan_p.add_argument(
+        "--event", metavar="EVENT",
+        help="with --from-triggers: only manifests bound to this "
+        "trigger.event become units",
+    )
     plan_p.add_argument(
         "--explain", action="store_true",
         help="print a human-readable decision walkthrough instead of JSON",
@@ -166,20 +184,38 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(collect_signals(), indent=2))
         return 0
 
-    raw = args.spec if args.spec is not None else args.spec_file.read_text(
-        encoding="utf-8")
+    if args.event and args.from_triggers is None:
+        print("error: --event only applies to --from-triggers",
+              file=sys.stderr)
+        return 2
+
     try:
-        if args.explain:
-            out = _explain(raw, cost=args.cost_estimate)
-        elif args.cost_estimate:
+        if args.from_triggers is not None:
+            spec, units, dag_warnings = trigger_manifests.spec_from_triggers(
+                args.from_triggers, args.event)
+            plan = plan_task(spec)
+            plan.units = units
+            plan.warnings = dag_warnings + plan.warnings
+            if not units:
+                plan.warnings.insert(
+                    0, "no enabled trigger manifests — 0 work units")
+        else:
+            raw = (
+                args.spec
+                if args.spec is not None
+                else args.spec_file.read_text(encoding="utf-8")
+            )
             spec = _load_spec(raw)
             plan = plan_task(spec)
+        if args.explain:
+            out = _explain(spec, plan, cost=args.cost_estimate)
+        elif args.cost_estimate:
             doc = plan.to_dict()
             doc["cost_estimate"] = estimate_cost(spec, plan)
             out = json.dumps(doc, indent=2)
         else:
-            out = plan_task_json(raw)
-    except ValueError as exc:
+            out = json.dumps(plan.to_dict(), indent=2)
+    except (ValueError, OSError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     print(out)

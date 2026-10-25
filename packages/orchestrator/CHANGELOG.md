@@ -4,6 +4,15 @@
 
 ### Added
 
+- `plan --from-triggers DIR [--event NAME]` consumes PAS trigger
+  manifests (`*.{yaml,yml,json}`, devin-skill-catalog §8 format) as plan
+  input: each enabled manifest is one work unit, `after`/`requires.
+  artifacts` resolve into the DAG ordering echoed under `units` in the
+  plan. Missing dependencies and cycles fail loudly; `action.command`
+  is never propagated (plans stay data-only). YAML is parsed by a strict
+  stdlib subset — the package still has zero dependencies.
+
+
 - `record` now emits a per-run `metrics.json` under `metrics/<run_id>.json`
   beside `plans.jsonl` — always (no opt-out), local observability only.
   Optional `--run-id`, `--session-id`, `--duration`, `--started` and

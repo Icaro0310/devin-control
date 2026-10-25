@@ -87,6 +87,42 @@ could not be measured, not that it is healthy. When `ram_pressure` is
 true, `plan_task` caps fan-out at one worker and says so in
 `warnings`; every plan echoes the signals it saw under `signals`.
 
+### `plan --from-triggers` (trigger manifests as DAG input)
+
+The planner can also consume the **same trigger-manifest format** the PAS
+session-dispatcher runs — a directory of `*.yaml` / `*.yml` / `*.json`
+files shaped like `.devin/catalog/triggers/` (spec: devin-skill-catalog
+§8):
+
+```bash
+devin-orchestrator plan --from-triggers .devin/catalog/triggers/
+devin-orchestrator plan --from-triggers DIR --event SessionEnd
+```
+
+Each *enabled* manifest becomes one work unit. Dependency edges come from
+`after:` (order) and `requires.artifacts:` (data — resolved to the
+producing handler), exactly as the dispatcher interprets them; the plan
+echoes the resolved DAG order under `units` (`id`, `event`, `after`) so
+the caller can schedule in order. All hard contracts still apply:
+`ram_pressure` caps workers, `DEVIN_INSIDE_SUBAGENT` still forbids
+nesting, and a fanned-out plan still carries `collect=true`. `--event`
+restricts the unit set to one trigger event.
+
+Validation is strict about what the DAG consumes: a missing `after`
+target, an unproduced `requires.artifacts`, a duplicate id, or a
+dependency **cycle fails loudly** (the error names the cycle path:
+`cycle in DAG: a -> b -> a`). Manifests that are only observers keep the
+plan read-only (`subagent_explore`); anything that mutates needs write
+access. Manifest `action.command` strings are parsed but **never
+propagated** — the plan stays data-only.
+
+YAML is parsed by a strict stdlib subset (zero dependencies) covering the
+manifest grammar — block maps, scalar lists (block or `[a, b]`), quoted
+and bare scalars, comments. Anchors, block scalars, inline maps and
+multi-document markers are rejected with a line-numbered error rather
+than misparsed. `.json` manifests are parsed as JSON, matching the
+catalog loader.
+
 ### `--cost-estimate`
 
 ```bash
