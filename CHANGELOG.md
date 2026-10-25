@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **CI** — `test-office.yml` gains a `quickstart` job that smoke-tests
+  the `packages/office` README quick start end to end on
+  `windows-latest` + `ubuntu-latest`: `pip install -e .`, daemon up on
+  port 8788, `/api/state` JSON assertions (agents/services/events +
+  integer `ts`), `/` HTML probe, store isolation via `OFFICE_*`/`HOME`/
+  XDG overrides, and trap-based cleanup.
 - **CI** — `auto-approve` repinned to the shared `pr-approve` gate at
   v1.6 (was v1.3) and gains the `pull_request_review_comment` trigger,
   so fix-commit replies re-evaluate the gate on the same head;
