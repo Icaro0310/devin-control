@@ -24,3 +24,113 @@ jobs:
     uses: Icaro0310/devin-powerups/.github/workflows/python-test.yml@v1
     with:
       package-dir: packages/office
+
+  quickstart:
+    # The README quick start (pip install -e . -> devin-office --port 8788
+    # -> GET /api/state) was never exercised in CI. This job runs it
+    # verbatim on both documented platforms (bash on Windows matches the
+    # shared commands; the PS guide documents the same two commands).
+    name: quickstart smoke (${{ matrix.os }})
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+
+      - name: Install (README quick start)
+        working-directory: packages/office
+        shell: bash
+        run: pip install -e .
+
+      - name: Serve + probe /api/state
+        shell: bash
+        env:
+          # Isolation: every store the daemon resolves is pointed at
+          # runner temp — OFFICE_DATA_DIR for the sessions.db root,
+          # OFFICE_CONF_DIR for UI config, OFFICE_STATE_DIR for
+          # kanban.json. HOME/XDG/APPDATA cover ecomon's home-dir scans
+          # and any platform fallback the explicit vars would miss, so
+          # the job provably never touches a real Devin store.
+          OFFICE_DATA_DIR: ${{ runner.temp }}/office-smoke/data
+          OFFICE_CONF_DIR: ${{ runner.temp }}/office-smoke/conf
+          OFFICE_STATE_DIR: ${{ runner.temp }}/office-smoke/state
+          OFFICE_ECOSYSTEM_DIR: ${{ runner.temp }}/office-smoke/eco
+          HOME: ${{ runner.temp }}/office-smoke/home
+          USERPROFILE: ${{ runner.temp }}/office-smoke/home
+          XDG_DATA_HOME: ${{ runner.temp }}/office-smoke/xdg-data
+          XDG_CONFIG_HOME: ${{ runner.temp }}/office-smoke/xdg-config
+          XDG_STATE_HOME: ${{ runner.temp }}/office-smoke/xdg-state
+          APPDATA: ${{ runner.temp }}/office-smoke/appdata
+          LOCALAPPDATA: ${{ runner.temp }}/office-smoke/local-appdata
+          # Unbuffered so the startup line (resolved sessions.db path)
+          # lands in the log even though the server never exits cleanly.
+          PYTHONUNBUFFERED: "1"
+        run: |
+          set -euo pipefail
+          mkdir -p "$OFFICE_DATA_DIR" "$OFFICE_CONF_DIR" \
+                   "$OFFICE_STATE_DIR" "$HOME"
+          LOG="${RUNNER_TEMP}/office-smoke-daemon.log"
+          STATE_JSON="${RUNNER_TEMP}/office-smoke-state.json"
+
+          devin-office --port 8788 >"$LOG" 2>&1 &
+          SRV=$!
+          trap 'kill "$SRV" 2>/dev/null || true' EXIT
+
+          # Readiness: poll until /api/state answers 200 with a real
+          # (non-"loading") payload — proves the background collect loop
+          # ran against the isolated stores, not just that the port opened.
+          ready=""
+          for i in $(seq 1 60); do
+            if ! kill -0 "$SRV" 2>/dev/null; then
+              echo "::error::devin-office exited before becoming ready"
+              cat "$LOG" || true
+              exit 1
+            fi
+            code=$(curl -s -o "$STATE_JSON" -w '%{http_code}' \
+              http://127.0.0.1:8788/api/state || true)
+            if [ "$code" = "200" ] && ! grep -q '"loading"' "$STATE_JSON"; then
+              ready=1
+              break
+            fi
+            sleep 0.5
+          done
+          if [ -z "$ready" ]; then
+            echo "::error::devin-office never served a ready /api/state (30s)"
+            cat "$LOG" || true
+            exit 1
+          fi
+          echo "ready after ${i} poll(s)"
+          cat "$LOG"   # prints resolved sessions.db path (inside runner temp)
+
+          python - "$STATE_JSON" <<'PY'
+          import json, sys
+          body = json.load(open(sys.argv[1], encoding="utf-8"))
+          assert isinstance(body, dict), body
+          assert isinstance(body.get("agents"), list)
+          assert isinstance(body.get("services"), dict)
+          assert isinstance(body.get("events"), list)
+          assert isinstance(body.get("ts"), int)
+          # A runner has no Devin stores, so the documented
+          # "sessions.db not found" payload is the expected shape —
+          # what must not happen is a 500 or a non-JSON body.
+          err = body.get("error", "")
+          assert not err or "sessions.db not found" in err, err
+          print("state ok:", json.dumps(
+              {k: body.get(k) for k in ("ts", "agents", "error")}))
+          PY
+
+          # The README also promises the dashboard page on the same port.
+          code=$(curl -s -o "${RUNNER_TEMP}/office-smoke-index.html" \
+            -w '%{http_code}' http://127.0.0.1:8788/)
+          [ "$code" = "200" ]
+          grep -qi '<html' "${RUNNER_TEMP}/office-smoke-index.html"
+          echo "GET / -> $code (html ok)"
