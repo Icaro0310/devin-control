@@ -123,6 +123,35 @@ multi-document markers are rejected with a line-numbered error rather
 than misparsed. `.json` manifests are parsed as JSON, matching the
 catalog loader.
 
+### `plan --emit-manifest` (plan as a PAS trigger manifest)
+
+The plan can be serialized as a **trigger manifest** in the format
+`devin-catalog` consumes (devin-skill-catalog §8) — drop it into
+`.devin/catalog/triggers/` and `devin-catalog.py schedule plan|install`
+puts the fan-out on a clock:
+
+```bash
+devin-orchestrator plan '<spec>' --emit-manifest \
+    [--schedule 'daily 05:30'] [--manifest-event SessionSweep] \
+    [--manifest-id myteam.nightly-fanout] [--severity p1] \
+    [--format yaml|json] [--out FILE]
+```
+
+The manifest carries `id` (`orchestrator.plan-<spec-hash>` by default,
+deterministic per spec), `version`, `owner`, `enabled`, `severity`,
+`class: enricher`, a `trigger` (`Scheduled` requires a valid
+`--schedule`; any other event ships without one), `idempotency.disabled`
+(the catalog requires it for constant Scheduled input),
+`on_hook_failure: fail-open`, and `artifacts.output: worker-plan`.
+
+`action.command` is the orchestrator's own **read-only** `plan` call with
+the canonical spec as its single JSON argument — the units ride inside
+that job description, never as shell fragments. Firing the manifest
+re-derives the plan under the signals live at that moment (a pressured
+host still caps at one worker) instead of replaying a frozen count. The
+emitted manifest validates against the real `trigger.schema.json`.
+
+
 ### `--cost-estimate`
 
 ```bash

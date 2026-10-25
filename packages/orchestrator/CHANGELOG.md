@@ -12,6 +12,16 @@
   is never propagated (plans stay data-only). YAML is parsed by a strict
   stdlib subset — the package still has zero dependencies.
 
+- `plan --emit-manifest` serializes a WorkerPlan as a PAS trigger
+  manifest (devin-skill-catalog §8 format): deterministic
+  `orchestrator.plan-<hash>` id, `Scheduled` (with `--schedule`) or any
+  synthetic `--manifest-event`, `idempotency.disabled` per catalog rules,
+  and an `action.command` that re-derives the plan via the read-only
+  `plan` call — units stay inside the job description, never shell
+  fragments. `--format yaml|json`, `--out FILE`, `--manifest-id`,
+  `--severity`.
+
+
 
 - `record` now emits a per-run `metrics.json` under `metrics/<run_id>.json`
   beside `plans.jsonl` — always (no opt-out), local observability only.

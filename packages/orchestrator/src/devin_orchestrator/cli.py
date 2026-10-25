@@ -8,6 +8,7 @@ import sys
 from importlib.resources import files
 from pathlib import Path
 
+from devin_orchestrator import emit as plan_emit
 from devin_orchestrator import manifests as trigger_manifests
 from devin_orchestrator import registry as plan_registry
 from devin_orchestrator.planner import (
@@ -90,6 +91,40 @@ def main(argv: list[str] | None = None) -> int:
         "--cost-estimate", action="store_true",
         help="add a per-unit duration estimate (minutes; a rough planning "
         "label — sequential vs fan-out critical path, not billing)",
+    )
+    plan_p.add_argument(
+        "--emit-manifest", action="store_true",
+        help="serialize the plan as a PAS trigger manifest "
+        "(devin-catalog §8 format) instead of plan JSON — the spec "
+        "becomes the action's single job description",
+    )
+    plan_p.add_argument(
+        "--manifest-id", metavar="ID",
+        help="manifest id (default: orchestrator.plan-<spec hash>); "
+        "must match <owner>.<slug>",
+    )
+    plan_p.add_argument(
+        "--manifest-event", metavar="EVENT",
+        help="trigger.event for the emitted manifest (default: "
+        "Scheduled); non-Scheduled events carry no schedule",
+    )
+    plan_p.add_argument(
+        "--schedule", metavar="EXPR",
+        help="with event=Scheduled: 'every <N>m|h' | 'hourly' | "
+        "'daily [HH:MM]' | 'weekly <dow> [HH:MM]' (default: daily)",
+    )
+    plan_p.add_argument(
+        "--severity", choices=("p0", "p1", "p2"), default=None,
+        help="manifest severity (default: p2)",
+    )
+    plan_p.add_argument(
+        "--format", choices=("yaml", "json"), default=None,
+        help="manifest serialization format (default: yaml)",
+    )
+    plan_p.add_argument(
+        "--out", type=Path, metavar="FILE",
+        help="with --emit-manifest: write the manifest to FILE instead "
+        "of stdout",
     )
     schema_p = sub.add_parser(
         "schema", help="print the JSON Schema for the spec or the plan")
@@ -189,6 +224,23 @@ def main(argv: list[str] | None = None) -> int:
               file=sys.stderr)
         return 2
 
+    emit_only_flags = (
+        args.manifest_id or args.manifest_event or args.schedule
+        or args.severity or args.format or args.out)
+    if emit_only_flags and not args.emit_manifest:
+        print("error: --manifest-id/--manifest-event/--schedule/"
+              "--severity/--format/--out only apply with --emit-manifest",
+              file=sys.stderr)
+        return 2
+    if args.emit_manifest and (args.explain or args.cost_estimate):
+        print("error: --emit-manifest produces only the manifest; "
+              "--explain/--cost-estimate do not apply", file=sys.stderr)
+        return 2
+    if args.emit_manifest and args.from_triggers is not None:
+        print("error: --emit-manifest does not apply to --from-triggers",
+              file=sys.stderr)
+        return 2
+
     try:
         if args.from_triggers is not None:
             spec, units, dag_warnings = trigger_manifests.spec_from_triggers(
@@ -207,6 +259,26 @@ def main(argv: list[str] | None = None) -> int:
             )
             spec = _load_spec(raw)
             plan = plan_task(spec)
+        if args.emit_manifest:
+            event = args.manifest_event or plan_emit.DEFAULT_EVENT
+            schedule = args.schedule
+            if event == plan_emit.DEFAULT_EVENT and schedule is None:
+                schedule = plan_emit.DEFAULT_SCHEDULE
+            manifest = plan_emit.plan_manifest(
+                spec, plan,
+                manifest_id=args.manifest_id,
+                event=event,
+                schedule=schedule,
+                severity=args.severity or "p2")
+            text = (
+                plan_emit.manifest_to_json(manifest)
+                if args.format == "json"
+                else plan_emit.manifest_to_yaml(manifest, plan))
+            if args.out:
+                args.out.write_text(text, encoding="utf-8")
+            else:
+                print(text, end="" if text.endswith("\n") else "\n")
+            return 0
         if args.explain:
             out = _explain(spec, plan, cost=args.cost_estimate)
         elif args.cost_estimate:
