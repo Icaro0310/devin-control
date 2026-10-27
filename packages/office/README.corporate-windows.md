@@ -6,25 +6,17 @@ Corporate Windows is a local-only environment: no Devin VM, QwenPaw, Slack depen
 
 ## Prerequisites
 
-- Python 3.10 or newer.
-- Git for a source checkout.
-- Devin Desktop or CLI on the machine whose sessions you want to view.
+- `uv` and Python 3.10 or newer; `uv` can manage Python.
 
 ## Install
 
-From a repository checkout, install the package and run the standalone
-read-only dashboard:
+Run the standalone read-only dashboard — installed CLI, or
+straight from a repository checkout:
 
 ```powershell
-cd devin-control\packages\office
-pip install -e .          # or: uv tool install . / pipx install .
-devin-office --port 8788
-```
-
-No install also works — the module self-bootstraps its imports:
-
-```powershell
-py -3 src\devin_office\daemon.py --port 8788
+uv tool install "devin-office"
+devin-office --port 8788  # installed package
+py -3 packages/office/src/devin_office/daemon.py --port 8788  # checkout
 ```
 
 Open `http://localhost:8788`; the process stops with Ctrl+C.
@@ -83,7 +75,7 @@ Save this as `%USERPROFILE%\devin-tasks\devin-office.cmd`:
 
 ```batch
 set "PATH=%USERPROFILE%\.local\bin;%PATH%"
-py "<CAMINHO_DO_CHECKOUT>\src\devin_office\daemon.py" --port 8788
+py "<CAMINHO_DO_CHECKOUT>\daemon.py" --port 8788
 ```
 
 ```powershell
@@ -99,4 +91,4 @@ User-scope registration (`schtasks` or the `ScheduledTask` cmdlets) needs no adm
 
 ## Troubleshooting
 
-- Start the daemon from the repository directory with the OS-specific Python launcher shown above.
+- If a command is not found, reopen PowerShell and run `uv tool update-shell`.

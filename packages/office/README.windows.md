@@ -6,25 +6,17 @@ Personal Windows uses the extended runtime: local execution plus optional Devin 
 
 ## Prerequisites
 
-- Python 3.10 or newer.
-- Git for a source checkout.
-- Devin Desktop or CLI on the machine whose sessions you want to view.
+- `uv` and Python 3.10 or newer; `uv` can manage Python.
 
 ## Install
 
-From a repository checkout, install the package and run the standalone
-read-only dashboard:
+Run the standalone read-only dashboard — installed CLI, or
+straight from a repository checkout:
 
 ```powershell
-cd devin-control\packages\office
-pip install -e .          # or: uv tool install . / pipx install .
-devin-office --port 8788
-```
-
-No install also works — the module self-bootstraps its imports:
-
-```powershell
-py -3 src\devin_office\daemon.py --port 8788
+uv tool install "devin-office"
+devin-office --port 8788  # installed package
+py -3 packages/office/src/devin_office/daemon.py --port 8788  # checkout
 ```
 
 Open `http://localhost:8788`; the process stops with Ctrl+C.
@@ -50,7 +42,7 @@ Use `--data-dir`/`--config-dir` where the tool documents them for non-default lo
 
 ## Recurring runs (optional)
 
-_Long-running daemon. `schtasks` cannot set "Start in", so either call `daemon.py` by absolute path as below (installed users can put `devin-office --port 8788` in the `.cmd` instead — the wrapper already prepends `%USERPROFILE%\.local\bin` to `PATH`) or open the task in Task Scheduler afterwards and set Actions → Edit → "Start in" to the checkout directory._
+_Long-running daemon. `schtasks` cannot set "Start in", so either call `daemon.py` by absolute path as below or open the task in Task Scheduler afterwards and set Actions → Edit → "Start in" to the checkout directory._
 
 Quoted path arguments inside `/tr` fail differently in cmd.exe and PowerShell 5.1, so this job goes through a wrapper `.cmd` file in your own profile directory (quoting inside the file works normally, and no other user can replace it). The task inherits your user `PATH`, so the wrapper first prepends the standard tool directory (`%USERPROFILE%\.local\bin`); if the tool lives elsewhere, write its full path inside the `.cmd`. Register from PowerShell with the `ScheduledTask` cmdlets, which take the path literally and replace cleanly on rerun (`-Force`):
 
@@ -62,7 +54,7 @@ Save this as `%USERPROFILE%\devin-tasks\devin-office.cmd`:
 
 ```batch
 set "PATH=%USERPROFILE%\.local\bin;%PATH%"
-py "<CAMINHO_DO_CHECKOUT>\src\devin_office\daemon.py" --port 8788
+py "<CAMINHO_DO_CHECKOUT>\daemon.py" --port 8788
 ```
 
 ```powershell
@@ -78,4 +70,4 @@ Runs under your account, no admin needed. Adjust the `New-ScheduledTaskTrigger` 
 
 ## Troubleshooting
 
-- Start the daemon from the repository directory with the OS-specific Python launcher shown above.
+- If a command is not found, reopen PowerShell and run `uv tool update-shell`.

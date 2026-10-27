@@ -6,25 +6,17 @@ Linux uses the extended runtime: local execution plus optional Devin VM/QwenPaw 
 
 ## Prerequisites
 
-- Python 3.10 or newer.
-- Git for a source checkout.
-- Devin Desktop or CLI on the machine whose sessions you want to view.
+- `uv` and Python 3.10 or newer; `uv` can manage Python.
 
 ## Install
 
-From a repository checkout, install the package and run the standalone
-read-only dashboard:
+Run the standalone read-only dashboard — installed CLI, or
+straight from a repository checkout:
 
 ```bash
-cd devin-control/packages/office
-pip install -e .          # or: uv tool install . / pipx install .
-devin-office --port 8788
-```
-
-No install also works — the module self-bootstraps its imports:
-
-```bash
-python3 src/devin_office/daemon.py --port 8788
+uv tool install 'devin-office'
+devin-office --port 8788  # installed package
+python3 packages/office/src/devin_office/daemon.py --port 8788  # checkout
 ```
 
 Open `http://localhost:8788`; the process stops with Ctrl+C.
@@ -54,7 +46,7 @@ Use `--data-dir`/`--config-dir` where the tool documents them for non-default lo
 _Long-running daemon. Prefer a `systemd --user` service (`WorkingDirectory=<CAMINHO_DO_CHECKOUT>`, `Restart=on-failure`) over `@reboot`._
 
 ```cron
-@reboot python <CAMINHO_DO_CHECKOUT>/src/devin_office/daemon.py --port 8788
+@reboot python <CAMINHO_DO_CHECKOUT>/daemon.py --port 8788
 ```
 
 Equivalent `systemd --user` timer works too; enable lingering if it must run without a login session.
@@ -84,4 +76,4 @@ cannot tell you it is dead.
 
 ## Troubleshooting
 
-- Start the daemon from the repository directory with the OS-specific Python launcher shown above.
+- If a command is not found, ensure the `uv` tools directory is on `PATH` and run `uv tool update-shell`.

@@ -21,20 +21,6 @@ npm install --global "@icaro0310/devin-bridge"
 Session data normally lives under `%APPDATA%\devin\cli\`; UI state and ACP stores under `%APPDATA%\Devin\User\`.
 Use `--data-dir`/`--config-dir` where the tool documents them for non-default locations.
 
-## Agent env
-
-The bridge drives `devin.exe acp` by default (`devin.exe` on `PATH`, the per-user install dir, or `DEVIN_CLI_PATH`); env vars select a different ACP-compatible agent or override its locations:
-
-```powershell
-$env:BRIDGE_AGENT = "devin"                                   # strategy name (default)
-$env:BRIDGE_AGENT_BIN = "C:\tools\my-agent\agent.exe"         # explicit executable
-$env:BRIDGE_AGENT_ARGS = '["--acp"]'                          # argv override (JSON array)
-$env:BRIDGE_AGENT_AUTH = "none"                               # auth methodId; "none" skips
-$env:BRIDGE_CREDENTIALS_PATH = "C:\tools\my-agent\credentials.toml"
-```
-
-`DEVIN_CLI_PATH`/`DEVIN_CREDENTIALS_PATH` remain valid legacy overrides. See [README.md](README.md#choosing-the-agent-bridge_agent) for the resolution order.
-
 ## Environment notes
 
 - Delegated runtime is optional; this guide installs local tooling only.
