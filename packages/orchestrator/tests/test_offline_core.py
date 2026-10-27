@@ -76,3 +76,26 @@ def test_plan_record_history_offline(tmp_path, capsys):
     hist = json.loads(capsys.readouterr().out)
     assert hist["total"] == 2
     assert hist["by_outcome"] == {"success": 1, "failed": 1}
+
+
+def test_queue_lifecycle_offline(tmp_path, capsys):
+    """submit → claim → heartbeat → done → collect → status: the whole
+    queue loop is local SQLite — no socket may ever open."""
+    db = tmp_path / "task-queue.db"
+    assert main(["queue", "submit", '{"what":"build api"}',
+                 "--batch", "b1", "--queue", str(db)]) == 0
+    tid = json.loads(capsys.readouterr().out)["id"]
+    assert main(["queue", "claim", "--worker", "w1",
+                 "--queue", str(db)]) == 0
+    assert json.loads(capsys.readouterr().out)["status"] == "claimed"
+    assert main(["queue", "heartbeat", tid, "--worker", "w1",
+                 "--queue", str(db)]) == 0
+    assert main(["queue", "done", tid, "--worker", "w1",
+                 "--result", '{"ok":true}', "--queue", str(db)]) == 0
+    capsys.readouterr()
+    assert main(["queue", "collect", "--batch", "b1",
+                 "--queue", str(db)]) == 0
+    doc = json.loads(capsys.readouterr().out)
+    assert doc["complete"] and doc["by_status"] == {"succeeded": 1}
+    assert main(["queue", "status", "--queue", str(db)]) == 0
+    assert json.loads(capsys.readouterr().out)["held"] == 0

@@ -1,15 +1,18 @@
-"""CLI: devin-orchestrator plan '<spec-json>' [--explain] | schema <name>."""
+"""CLI: devin-orchestrator plan '<spec-json>' [--explain] | schema <name>
+| queue <submit|fanout|claim|heartbeat|done|fail|cancel|sweep|collect|status>."""
 
 from __future__ import annotations
 
 import argparse
 import json
+import sqlite3
 import sys
 from importlib.resources import files
 from pathlib import Path
 
 from devin_orchestrator import emit as plan_emit
 from devin_orchestrator import manifests as trigger_manifests
+from devin_orchestrator import queue_db
 from devin_orchestrator import registry as plan_registry
 from devin_orchestrator.planner import (
     WorkerPlan,
@@ -26,6 +29,238 @@ def _load_spec(spec_json: str) -> dict:
         return json.loads(spec_json)
     except json.JSONDecodeError as exc:
         raise ValueError(f"invalid task spec JSON: {exc}") from exc
+
+
+def _parse_files(values: list[str] | None) -> list[str]:
+    """``--files`` is repeatable and comma-friendly: flatten both forms
+    into one list of non-empty declared paths."""
+    out: list[str] = []
+    for chunk in values or []:
+        for piece in chunk.split(","):
+            piece = piece.strip()
+            if piece:
+                out.append(piece)
+    return out
+
+
+def _add_queue_parser(sub) -> None:
+    """``queue`` — the persistent task queue (SQLite) the coordinator
+    submits to and workers claim from. Local store only; it records and
+    locks, it never spawns workers or runs task commands."""
+    queue_p = sub.add_parser(
+        "queue",
+        help="persistent task queue (SQLite, local only): submit/claim/"
+        "lease/collect units of work — records and locks, never spawns",
+    )
+    qsub = queue_p.add_subparsers(dest="queue_command", required=True)
+
+    def db(p: argparse.ArgumentParser) -> None:
+        p.add_argument(
+            "--queue", type=Path, metavar="DB",
+            help="queue database path (default: "
+            ".devin-ecosystem/task-queue.db — same family as plans.jsonl)",
+        )
+
+    def files_arg(p: argparse.ArgumentParser) -> None:
+        p.add_argument(
+            "--files", action="append", metavar="FILE[,FILE...]",
+            help="declared paths the unit touches (repeatable, "
+            "comma-separated); colliding with a live task's files "
+            "refuses the submission",
+        )
+
+    s = qsub.add_parser(
+        "submit", help="queue a unit of work: prints the task id as JSON")
+    db(s)
+    s.add_argument("payload", help="task payload as a JSON object")
+    s.add_argument("--kind", default="task", metavar="KIND")
+    s.add_argument("--repo", default="", metavar="REPO",
+                   help="repo the unit targets (collision scope)")
+    files_arg(s)
+    s.add_argument("--batch", default="", metavar="NAME",
+                   help="batch id grouping a fan-out for collect")
+    s.add_argument("--key", metavar="IDEMPOTENCY-KEY",
+                   help="resubmission-safe key: an existing key returns "
+                   "the original task instead of duplicating work")
+    s.add_argument("--max-attempts", type=int,
+                   default=queue_db.DEFAULT_MAX_ATTEMPTS,
+                   help="claim attempts before terminal failure "
+                   f"(1..{queue_db.MAX_ATTEMPTS_CAP})")
+    s.add_argument("--priority", type=int, default=0,
+                   help="higher priority is claimed first (default 0)")
+
+    f = qsub.add_parser(
+        "fanout",
+        help="submit a unit of work targeting an isolated git worktree: "
+        "takes a physical worktree+branch lock and runs the file "
+        "collision check; prints the task id as JSON")
+    db(f)
+    f.add_argument("repo", type=Path, help="local git repo the unit targets")
+    f.add_argument("--branch", required=True, metavar="NAME",
+                   help="branch the worktree will hold (locked per repo)")
+    f.add_argument("--worktree", type=Path, metavar="PATH",
+                   help="worktree path (default: "
+                   "<repo-parent>/.devin-worktrees/<branch-slug>)")
+    files_arg(f)
+    f.add_argument("--batch", default="", metavar="NAME")
+    f.add_argument("--key", metavar="IDEMPOTENCY-KEY")
+    f.add_argument("--max-attempts", type=int,
+                   default=queue_db.DEFAULT_MAX_ATTEMPTS)
+    f.add_argument("--priority", type=int, default=0)
+    f.add_argument("--payload", metavar="JSON", default=None,
+                   help="extra task payload fields as a JSON object")
+
+    c = qsub.add_parser(
+        "claim", help="atomically claim the oldest queued task for a "
+        "worker; prints the task JSON or 'null' when empty/at limit")
+    db(c)
+    c.add_argument("--worker", required=True, metavar="ID")
+    c.add_argument("--kind", default=None, metavar="KIND",
+                   help="only claim tasks of this kind")
+    c.add_argument("--max-claims", type=int, default=1,
+                   help="concurrent tasks this worker may hold "
+                   f"(1..{queue_db.MAX_CLAIMS_PER_WORKER}, default 1)")
+    c.add_argument("--lease", type=float,
+                   default=queue_db.DEFAULT_LEASE_S, metavar="SECONDS",
+                   help="lease length before the task is sweepable "
+                   "(default %(default)s)")
+
+    h = qsub.add_parser(
+        "heartbeat", help="renew a held task's lease; the first "
+        "heartbeat also marks it running")
+    db(h)
+    h.add_argument("task_id")
+    h.add_argument("--worker", required=True, metavar="ID")
+    h.add_argument("--lease", type=float,
+                   default=queue_db.DEFAULT_LEASE_S, metavar="SECONDS")
+
+    d = qsub.add_parser(
+        "done", help="mark a held task succeeded (optionally with a "
+        "JSON result) and release its worktree lock")
+    db(d)
+    d.add_argument("task_id")
+    d.add_argument("--worker", required=True, metavar="ID")
+    d.add_argument("--result", metavar="JSON", default=None,
+                   help="result payload as a JSON object")
+
+    x = qsub.add_parser(
+        "fail", help="mark a held task failed — re-queues for a bounded "
+        "retry while attempts remain; --final forces terminal")
+    db(x)
+    x.add_argument("task_id")
+    x.add_argument("--worker", required=True, metavar="ID")
+    x.add_argument("--error", required=True, metavar="MSG")
+    x.add_argument("--final", action="store_true")
+
+    k = qsub.add_parser(
+        "cancel", help="cancel a non-terminal task (any actor may "
+        "cancel; done/fail require the lease holder)")
+    db(k)
+    k.add_argument("task_id")
+    k.add_argument("--reason", default="", metavar="MSG")
+
+    w = qsub.add_parser(
+        "sweep", help="orphan recovery: re-queue tasks whose lease "
+        "expired without heartbeat (fail them when attempts are "
+        "exhausted); prints counts as JSON")
+    db(w)
+
+    g = qsub.add_parser(
+        "collect", help="gather finished task results before any "
+        "aggregate report — stamps them collected; prints the collection "
+        "doc as JSON")
+    db(g)
+    g.add_argument("--batch", default=None, metavar="NAME",
+                   help="only collect this batch's tasks")
+    g.add_argument("--all", action="store_true",
+                   help="include tasks already collected")
+    g.add_argument("--strict", action="store_true",
+                   help="exit 1 when tasks in scope are still open")
+
+    t = qsub.add_parser(
+        "status", help="queue snapshot as JSON: counts per state, "
+        "workers, worktree locks, expired leases")
+    db(t)
+
+
+def _cmd_queue(args: argparse.Namespace) -> int:
+    db_path = args.queue or queue_db.default_queue_path()
+    try:
+        con = queue_db.connect(db_path)
+    except (OSError, sqlite3.Error) as exc:
+        print(f"error: cannot open queue {db_path}: {exc}", file=sys.stderr)
+        return 2
+    try:
+        cmd = args.queue_command
+        if cmd == "submit":
+            try:
+                payload = json.loads(args.payload)
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"invalid payload JSON: {exc}") from exc
+            out = queue_db.submit(
+                con, payload, kind=args.kind,
+                files=_parse_files(args.files), repo=args.repo,
+                batch=args.batch, idempotency_key=args.key,
+                max_attempts=args.max_attempts, priority=args.priority)
+        elif cmd == "fanout":
+            extra = None
+            if args.payload is not None:
+                try:
+                    extra = json.loads(args.payload)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(
+                        f"invalid --payload JSON: {exc}") from exc
+                if not isinstance(extra, dict):
+                    raise ValueError("--payload must be a JSON object")
+            out = queue_db.submit_fanout(
+                con, str(args.repo), args.branch,
+                files=_parse_files(args.files),
+                worktree=str(args.worktree) if args.worktree else None,
+                payload=extra, batch=args.batch,
+                idempotency_key=args.key,
+                max_attempts=args.max_attempts, priority=args.priority)
+        elif cmd == "claim":
+            out = queue_db.claim(
+                con, args.worker, kind=args.kind,
+                max_claims=args.max_claims, lease_s=args.lease)
+        elif cmd == "heartbeat":
+            out = queue_db.heartbeat(
+                con, args.task_id, args.worker, lease_s=args.lease)
+        elif cmd == "done":
+            result = None
+            if args.result is not None:
+                try:
+                    result = json.loads(args.result)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(
+                        f"invalid --result JSON: {exc}") from exc
+                if not isinstance(result, dict):
+                    raise ValueError("--result must be a JSON object")
+            out = queue_db.done(con, args.task_id, args.worker, result)
+        elif cmd == "fail":
+            out = queue_db.fail(
+                con, args.task_id, args.worker, args.error,
+                final=args.final)
+        elif cmd == "cancel":
+            out = queue_db.cancel(con, args.task_id, reason=args.reason)
+        elif cmd == "sweep":
+            out = queue_db.sweep(con)
+        elif cmd == "collect":
+            out = queue_db.collect(
+                con, batch=args.batch, include_collected=args.all)
+        elif cmd == "status":
+            out = queue_db.status(con)
+        else:  # pragma: no cover - argparse enforces the subcommand set
+            raise ValueError(f"unknown queue command {cmd!r}")
+    except (ValueError, sqlite3.Error) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        con.close()
+        return 2
+    con.close()
+    print(json.dumps(out, indent=2))
+    if cmd == "collect" and args.strict and not out["complete"]:
+        return 1
+    return 0
 
 
 def _explain(spec: dict, plan: WorkerPlan, cost: bool = False) -> str:
@@ -69,7 +304,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     sub = parser.add_subparsers(dest="command", required=True)
     plan_p = sub.add_parser("plan", help="emit a worker plan as JSON")
-    group = plan_p.add_mutually_exclusive_group(required=True)
+    group = plan_p.add_mutually_exclusive_group()
     group.add_argument("spec", nargs="?", help="task spec as a JSON string")
     group.add_argument("--spec-file", type=Path, help="path to a JSON task spec")
     group.add_argument(
@@ -91,6 +326,14 @@ def main(argv: list[str] | None = None) -> int:
         "--cost-estimate", action="store_true",
         help="add a per-unit duration estimate (minutes; a rough planning "
         "label — sequential vs fan-out critical path, not billing)",
+    )
+    plan_p.add_argument(
+        "--files", action="append", metavar="FILE[,FILE...]",
+        help="declare the work units directly: one unit per file "
+        "(repeatable; comma-separated accepted). Builds units_detail, "
+        "sets independent_units to the file count, and runs the same "
+        "collision check as units_detail. Usable alone — the spec "
+        "then defaults to an empty object",
     )
     plan_p.add_argument(
         "--emit-manifest", action="store_true",
@@ -165,6 +408,7 @@ def main(argv: list[str] | None = None) -> int:
         help="print the machine signals the planner honours "
         "(ram_pressure, inside_worker) as JSON",
     )
+    _add_queue_parser(sub)
     args = parser.parse_args(argv)
 
     if args.command == "schema":
@@ -219,6 +463,20 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(collect_signals(), indent=2))
         return 0
 
+    if args.command == "queue":
+        return _cmd_queue(args)
+
+    if args.files and args.from_triggers is not None:
+        print("error: --files does not apply to --from-triggers",
+              file=sys.stderr)
+        return 2
+
+    if (args.spec is None and args.spec_file is None
+            and args.from_triggers is None and not args.files):
+        print("error: a task spec is required — pass spec, --spec-file, "
+              "--from-triggers or --files", file=sys.stderr)
+        return 2
+
     if args.event and args.from_triggers is None:
         print("error: --event only applies to --from-triggers",
               file=sys.stderr)
@@ -252,13 +510,38 @@ def main(argv: list[str] | None = None) -> int:
                 plan.warnings.insert(
                     0, "no enabled trigger manifests — 0 work units")
         else:
-            raw = (
-                args.spec
-                if args.spec is not None
-                else args.spec_file.read_text(encoding="utf-8")
-            )
+            if args.spec is not None:
+                raw = args.spec
+            elif args.spec_file is not None:
+                raw = args.spec_file.read_text(encoding="utf-8")
+            else:
+                raw = "{}"  # --files alone: a default spec is enough
             spec = _load_spec(raw)
-            plan = plan_task(spec)
+            declared = _parse_files(args.files)
+            if declared:
+                if spec.get("units_detail"):
+                    raise ValueError(
+                        "--files and spec 'units_detail' are mutually "
+                        "exclusive — declare units one way or the other")
+                spec["units_detail"] = [
+                    {"id": f"unit-{i}", "files": [f]}
+                    for i, f in enumerate(declared, 1)
+                ]
+                requested = spec.get("independent_units")
+                spec["independent_units"] = len(declared)
+                plan = plan_task(spec)
+                plan.units = [
+                    {"id": u["id"], "files": u["files"],
+                     "event": None, "after": []}
+                    for u in spec["units_detail"]
+                ]
+                if requested not in (None, len(declared)):
+                    plan.warnings.insert(
+                        0,
+                        f"independent_units={requested} overridden by "
+                        f"--files ({len(declared)} unit(s))")
+            else:
+                plan = plan_task(spec)
         if args.emit_manifest:
             event = args.manifest_event or plan_emit.DEFAULT_EVENT
             schedule = args.schedule

@@ -13,6 +13,20 @@
   counts. Always written — read-only observability.
 - `plan --cost-estimate`: per-unit duration estimate + sequential vs.
   fan-out critical path (minutes; planning label, not billing).
+- `queue`: persistent SQLite task queue
+  (`.devin-ecosystem/task-queue.db`) — explicit states (queued → claimed
+  → running → succeeded|failed|cancelled), atomic BEGIN IMMEDIATE
+  claims bounded per worker, heartbeat-renewed leases with `sweep`
+  orphan recovery, bounded retries + idempotency keys, `collect`
+  (stamps terminal results, reports stragglers before the aggregate
+  report), and secret-screened writes. Records and locks only — never
+  spawns workers.
+- `queue fanout`: worktree-targeted submissions with a physical
+  (repo, worktree)+(repo, branch) lock and `file_collisions`-style
+  refusal against live tasks.
+- `plan --files`: declare units directly as a file list (one
+  constrained unit per file; mutually exclusive with `units_detail` and
+  `--from-triggers`).
 
 ## M2 backlog
 
