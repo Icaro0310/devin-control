@@ -90,6 +90,7 @@ devin-switch import personal.json --apply --name copy --force
 devin-switch apply personal             # DRY-RUN as JSON (machine contract)
 devin-switch apply personal --apply     # JSON result; same snapshot+verify path
 devin-switch doctor                     # config sanity + closest profile
+devin-switch verify-env                 # parse + required keys + path checks
 ```
 
 Every command accepts `--data-dir`, `--config-dir` and `--profiles-dir`
@@ -99,7 +100,28 @@ order: `--profiles-dir` → `$DEVIN_SWITCH_PROFILES_DIR` → `./profiles` →
 the bundled examples.
 
 Exit code is `0` on success/clean dry-run and `1` on errors — and for
-`doctor`, on any `FAIL` check (like `devin-doctor`).
+`doctor` and `verify-env`, on any `FAIL` check (like `devin-doctor`).
+
+### `verify-env` — deterministic environment verification
+
+`doctor` is diagnostic (warnings stay warnings); `verify-env` is the
+strict gate: it checks every managed file that exists under both roots
+— `config.json`, `mcp_config.json`, `hooks.v1.json`,
+`User/settings.json` — and prints one explicit `PASS`/`WARN`/`FAIL`
+line per check plus a summary:
+
+- **Parses** — malformed JSONC fails loudly (comments and trailing
+  commas are tolerated);
+- **Required keys** — `mcp_config.json` must carry `mcpServers`
+  (`config.json`/`settings.json` are legitimately sparse and require
+  none);
+- **Shape** — the same hooks/MCP shape validators as `doctor`;
+- **Referenced paths** — each `mcpServers.*.command` that looks like a
+  filesystem path (not a bare `PATH` binary like `python`/`uvx`) and
+  each `cwd` must exist;
+- **`credentials.toml`** — reported by presence only, never opened.
+
+Any `FAIL` → exit `1`. Nothing is ever written.
 
 ## Profiles
 
@@ -119,7 +141,9 @@ profiles/
 
 Overlays are **whole-file replacements**, not merges — what the profile
 ships is what the file becomes. Files are JSONC: `//` and `/* */`
-comments allowed, trailing commas not.
+comments allowed, and a comma that directly closes a `]`/`}` container
+is tolerated (leading/double commas and other malformed input still
+fail loudly).
 
 ### Exporting and importing profiles
 
