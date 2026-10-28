@@ -13,6 +13,7 @@ import json
 import math
 import os
 import re
+import statistics
 import time
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -254,4 +255,88 @@ def summarize(registry: Path) -> dict[str, Any]:
         "total": len(recs),
         "by_outcome": by_outcome,
         "note": "local registry only — nothing leaves the machine",
+    }
+
+
+def _bucket_stats(durations_min: list[float]) -> dict[str, Any]:
+    return {
+        "units": len(durations_min),
+        "mean_minutes": round(statistics.fmean(durations_min), 2),
+        "p50_minutes": round(statistics.median(durations_min), 2),
+    }
+
+
+def calibrate(registry: Path) -> dict[str, Any]:
+    """Recompute duration-estimate defaults from recorded runs.
+
+    Reads ``plans.jsonl`` records plus each run's
+    ``metrics/<run_id>.json`` and aggregates observed unit durations
+    (recorded in seconds, reported in minutes — the unit
+    ``plan --cost-estimate`` uses): overall mean/p50 plus per-worker-count
+    and per-unit-id breakdowns. A run whose metrics carry no unit detail
+    still contributes its ``duration_s`` as a single observation when the
+    plan ran inline (``workers == 0``); fanned-out totals cannot be
+    attributed back to units.
+
+    The recorded schema persists no spec ``kind``/``estimated_scope``, so
+    buckets are plan-shape (worker count) and unit-id based — per-scope
+    recalibration needs a registry schema extension. Read-only: nothing
+    is written and nothing leaves the machine.
+    """
+    observed: list[float] = []
+    by_workers: dict[str, list[float]] = {}
+    by_unit: dict[str, list[float]] = {}
+    runs = 0
+    runs_observed = 0
+    metrics_missing = 0
+    for rec in iter_records(registry):
+        runs += 1
+        try:
+            doc = json.loads(
+                metrics_path(registry, str(rec.get("run_id") or ""))
+                .read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            metrics_missing += 1
+            continue
+        found: list[tuple[str | None, float]] = []
+        for u in doc.get("units") or []:
+            if not isinstance(u, dict):
+                continue
+            dur = u.get("duration_s")
+            if (isinstance(dur, (int, float))
+                    and not isinstance(dur, bool)
+                    and math.isfinite(dur) and dur >= 0):
+                found.append(
+                    (u.get("id") if isinstance(u.get("id"), str) else None,
+                     dur / 60.0))
+        if not found:
+            dur = doc.get("duration_s")
+            if (doc.get("workers") == 0
+                    and isinstance(dur, (int, float))
+                    and not isinstance(dur, bool)
+                    and math.isfinite(dur) and dur >= 0):
+                # inline run: the whole run is one unit of work
+                found.append((None, dur / 60.0))
+        if found:
+            runs_observed += 1
+        workers = doc.get("workers", rec.get("workers"))
+        wkey = str(workers if workers is not None else "?")
+        for uid, minutes in found:
+            observed.append(minutes)
+            by_workers.setdefault(wkey, []).append(minutes)
+            if uid:
+                by_unit.setdefault(uid, []).append(minutes)
+    return {
+        "registry": str(registry),
+        "runs": runs,
+        "runs_observed": runs_observed,
+        "metrics_missing": metrics_missing,
+        "units_observed": len(observed),
+        "suggested_unit_minutes": _bucket_stats(observed) if observed else None,
+        "by_workers": {
+            k: _bucket_stats(v) for k, v in sorted(by_workers.items())},
+        "by_unit": {k: _bucket_stats(v) for k, v in sorted(by_unit.items())},
+        "note": "defaults recomputed from recorded runs — local only, "
+                "nothing leaves the machine; spec kind/estimated_scope is "
+                "not persisted, so buckets are by worker count and unit id",
     }

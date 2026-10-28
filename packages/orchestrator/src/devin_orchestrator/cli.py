@@ -9,7 +9,12 @@ from importlib.resources import files
 from pathlib import Path
 
 from devin_orchestrator import registry as plan_registry
-from devin_orchestrator.planner import estimate_cost, plan_task, plan_task_json
+from devin_orchestrator.planner import (
+    SCOPE_UNIT_MINUTES,
+    estimate_cost,
+    plan_task,
+    plan_task_json,
+)
 
 SCHEMA_NAMES = ("spec", "plan")
 
@@ -106,6 +111,13 @@ def main(argv: list[str] | None = None) -> int:
     hist_p.add_argument("--registry", type=Path,
                         help="override plans.jsonl location")
     hist_p.add_argument("--json", action="store_true")
+    cal_p = sub.add_parser(
+        "calibrate",
+        help="recompute duration-estimate defaults from recorded runs "
+        "(plans.jsonl + metrics/<run_id>.json)")
+    cal_p.add_argument("--registry", type=Path,
+                       help="override plans.jsonl location")
+    cal_p.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
 
     if args.command == "schema":
@@ -154,6 +166,26 @@ def main(argv: list[str] | None = None) -> int:
                               sorted(summary["by_outcome"].items())
                               ) if summary["by_outcome"] else "none")
             print(f"({summary['note']})")
+        return 0
+
+    if args.command == "calibrate":
+        reg = args.registry or plan_registry.default_registry_path()
+        report = plan_registry.calibrate(reg)
+        report["current_scope_defaults"] = dict(SCOPE_UNIT_MINUTES)
+        if args.json:
+            print(json.dumps(report, indent=2))
+        else:
+            print(f"{report['runs']} recorded run(s), "
+                  f"{report['units_observed']} unit duration(s) observed")
+            suggested = report["suggested_unit_minutes"]
+            if suggested:
+                print(f"suggested unit minutes: "
+                      f"mean={suggested['mean_minutes']:g} "
+                      f"p50={suggested['p50_minutes']:g}")
+            else:
+                print("no durations recorded yet — keep the current "
+                      "scope defaults")
+            print(f"({report['note']})")
         return 0
 
     raw = args.spec if args.spec is not None else args.spec_file.read_text(
