@@ -102,6 +102,7 @@ Everything per-agent lives in a strategy registry (`AGENT_STRATEGIES` in
 | `BRIDGE_AGENT_ARGS` | JSON array argv override (default: the strategy's, `["acp"]` for devin); `'[]'` = zero args. Setting it empty or whitespace-only is an error — unset it for the default |
 | `BRIDGE_AGENT_AUTH` | `authenticate` methodId override; `none` skips the call (default: the strategy's, `devin-browser` for devin) |
 | `BRIDGE_CREDENTIALS_PATH` | credentials.toml override for any strategy |
+| `BRIDGE_AGENT_TOKEN_KEY` | credentials.toml key holding the session token (default: the strategy's `tokenKey`, `windsurf_api_key` for devin) |
 
 Resolution order — executable: `BRIDGE_AGENT_BIN` → the selected
 strategy's candidates (`BRIDGE_AGENT`, default `devin`:
@@ -124,12 +125,12 @@ session token (`--token`/credentials file). When the agent advertises
 it does not offer is skipped, and `BRIDGE_AGENT_AUTH=none` disables the
 call for agents that need no handshake. Agents requiring interactive or
 multi-step auth flows are out of scope; the token still comes from the
-strategy's credentials file (`tokenKey`). There is no env override for
-the key name itself (`BRIDGE_AGENT_TOKEN_KEY` does not exist): a custom
-agent driven purely by env still reads `windsurf_api_key = "..."` — the
-`devin` strategy's key — from its credentials.toml. For agents whose
-secrets live under a different key, add a registry entry, or use
-`BRIDGE_AGENT_AUTH=none` to skip `authenticate` entirely.
+strategy's credentials file. The key name is `BRIDGE_AGENT_TOKEN_KEY`
+when set, else the strategy's `tokenKey` — a custom agent driven purely
+by env can therefore point the bridge at its own key
+(`BRIDGE_AGENT_TOKEN_KEY=my_agent_token`) instead of writing
+`windsurf_api_key = "..."` into its credentials.toml. Agents that need
+no handshake at all use `BRIDGE_AGENT_AUTH=none` to skip `authenticate`.
 
 To support one natively (own install-path candidates, credential
 location, default argv, auth method), add a named entry to

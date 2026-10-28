@@ -5,7 +5,8 @@ import path from "node:path";
 import test from "node:test";
 import {
   credentialsPath, devinBin, devinBinCandidates,
-  agentArgs, agentAuthMethod, agentBin, agentBinCandidates, agentStrategy, DevinAcp,
+  agentArgs, agentAuthMethod, agentBin, agentBinCandidates, agentStrategy,
+  readSessionToken, DevinAcp,
 } from "../src/acp-client.js";
 import { Policy } from "../src/policy.js";
 
@@ -262,6 +263,46 @@ test("agentAuthMethod: devin default, override, and none", () => {
   assert.equal(agentAuthMethod({ env: { BRIDGE_AGENT_AUTH: "acme-auth" } }), "acme-auth");
   assert.equal(agentAuthMethod({ env: { BRIDGE_AGENT_AUTH: "none" } }), null);
   assert.equal(agentAuthMethod({ env: { BRIDGE_AGENT_AUTH: "NONE" } }), null);
+});
+
+// readSessionToken reads process.env directly — save/restore the two
+// env vars it consults around each assertion.
+function withCredentials(content, env, fn) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "creds-key-"));
+  const creds = path.join(dir, "credentials.toml");
+  fs.writeFileSync(creds, content);
+  const saved = {};
+  for (const k of Object.keys(env)) saved[k] = process.env[k];
+  for (const [k, v] of Object.entries(env)) {
+    if (v === undefined) delete process.env[k]; else process.env[k] = v;
+  }
+  const savedCred = process.env.BRIDGE_CREDENTIALS_PATH;
+  process.env.BRIDGE_CREDENTIALS_PATH = creds;
+  try {
+    return fn();
+  } finally {
+    if (savedCred === undefined) delete process.env.BRIDGE_CREDENTIALS_PATH;
+    else process.env.BRIDGE_CREDENTIALS_PATH = savedCred;
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k]; else process.env[k] = v;
+    }
+  }
+}
+
+test("BRIDGE_AGENT_TOKEN_KEY overrides the credentials key name", () => {
+  withCredentials(
+    'custom_agent_token = "tok-custom"\nwindsurf_api_key = "tok-windsurf"\n',
+    { BRIDGE_AGENT_TOKEN_KEY: "custom_agent_token" },
+    () => assert.equal(readSessionToken(), "tok-custom"),
+  );
+});
+
+test("the credentials key defaults to the strategy tokenKey unchanged", () => {
+  withCredentials(
+    'windsurf_api_key = "tok-default"\n',
+    { BRIDGE_AGENT_TOKEN_KEY: undefined },
+    () => assert.equal(readSessionToken(), "tok-default"),
+  );
 });
 
 // SEC: a BRIDGE_CREDENTIALS_PATH outside the built-in credential-store
