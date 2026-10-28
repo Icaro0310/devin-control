@@ -103,7 +103,8 @@ def test_bundled_profiles_mirror_repo_examples():
 
 
 def test_bundled_profiles_parse_as_jsonc():
-    """Every shipped overlay must parse — comments OK, trailing commas not."""
+    """Every shipped overlay must parse — comments and trailing commas
+    tolerated, everything else raises."""
     for profile in discover(paths.bundled_profiles_dir()).values():
         for rel, src in profile.files.items():
             if rel.endswith(".json"):

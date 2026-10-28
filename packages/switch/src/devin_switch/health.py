@@ -205,6 +205,153 @@ def check_config_files(roots: Roots) -> list[CheckResult]:
     return results
 
 
+# ---------------------------------------------------------------------------
+# verify-env — deterministic environment verification
+# ---------------------------------------------------------------------------
+
+# Keys a managed file must carry to be considered consistent. Kept
+# deliberately short: config.json and User/settings.json are legitimately
+# sparse, but an mcp_config.json without mcpServers is a mistake.
+REQUIRED_KEYS: dict[str, tuple[str, ...]] = {
+    "mcp_config.json": ("mcpServers",),
+}
+
+
+def _looks_like_path(value: str) -> bool:
+    """Heuristic: a ``command``/``cwd`` string that refers to a file on
+    disk (vs. a bare binary resolved via PATH). Deterministic — anchors,
+    drive letters and separators only."""
+    v = value.strip()
+    if not v:
+        return False
+    if v.startswith(("/", "\\", "~", ".")):
+        return True
+    if "/" in v or "\\" in v:
+        return True
+    return len(v) > 2 and v[1] == ":"  # C:\...
+
+
+def _mcp_path_problems(obj: Any, base: Path) -> list[str]:
+    """Referenced-path check for mcp_config.json: every server's
+    ``command`` (when it looks like a path, not a PATH binary) and
+    ``cwd`` must resolve to something that exists."""
+    problems: list[str] = []
+    servers = obj.get("mcpServers") if isinstance(obj, dict) else None
+    if not isinstance(servers, dict):
+        return problems
+    for name, server in sorted(servers.items()):
+        if not isinstance(server, dict):
+            continue
+        command = server.get("command")
+        if isinstance(command, str) and _looks_like_path(command):
+            target = Path(command).expanduser()
+            if not target.is_absolute():
+                target = (base / target).resolve()
+            if not target.exists():
+                problems.append(
+                    f"server '{name}': command path does not exist: "
+                    f"{command}"
+                )
+        cwd = server.get("cwd")
+        if isinstance(cwd, str) and cwd.strip():
+            target = Path(cwd).expanduser()
+            if not target.is_absolute():
+                target = (base / target).resolve()
+            if not target.is_dir():
+                problems.append(
+                    f"server '{name}': cwd is not a directory: {cwd}"
+                )
+    return problems
+
+
+def verify_env(roots: Roots) -> list[CheckResult]:
+    """Verify the config files the switch manages, deterministically.
+
+    Per file: exists-and-parses (malformed JSONC fails loudly), the
+    documented shape validators, required keys (``mcp_config.json`` needs
+    ``mcpServers``), and referenced paths (MCP ``command``/``cwd`` that
+    look like paths must exist). ``credentials.toml`` is reported by
+    presence only — never opened. Every check is explicit: callers count
+    ``FAIL`` results for the exit code.
+    """
+    results: list[CheckResult] = []
+    roots_seen = {roots.data_dir, roots.config_dir}
+    any_file = False
+    for root in sorted(roots_seen):
+        for name in _CONFIG_FILES:
+            path = root / name
+            if not path.is_file():
+                continue
+            any_file = True
+            label = f"{root.name}/{name}"
+            try:
+                obj = load_jsonc(path)
+            except (json.JSONDecodeError, OSError, UnicodeDecodeError) as exc:
+                results.append(
+                    CheckResult("FAIL", label, f"invalid JSON — {exc}")
+                )
+                continue
+            missing = [
+                k for k in REQUIRED_KEYS.get(name, ())
+                if not (isinstance(obj, dict) and k in obj)
+            ]
+            if missing:
+                results.append(
+                    CheckResult(
+                        "FAIL", label,
+                        f"missing required key(s): {', '.join(missing)}"
+                    )
+                )
+                continue
+            errors, warnings = _validator_for(name)(obj)
+            if errors:
+                results.append(CheckResult("FAIL", label, errors[0]))
+                continue
+            path_problems = (
+                _mcp_path_problems(obj, path.parent)
+                if name == "mcp_config.json"
+                else []
+            )
+            if path_problems:
+                results.append(
+                    CheckResult("FAIL", label, path_problems[0])
+                )
+                continue
+            if warnings:
+                results.append(CheckResult("WARN", label, warnings[0]))
+            else:
+                results.append(CheckResult("PASS", label, "OK"))
+    settings = roots.config_dir / "User" / "settings.json"
+    if settings.is_file():
+        any_file = True
+        try:
+            obj = load_jsonc(settings)
+            status = "PASS" if isinstance(obj, dict) else "FAIL"
+            detail = (
+                "OK" if isinstance(obj, dict) else "settings.json is not "
+                "a JSON object"
+            )
+        except (json.JSONDecodeError, OSError, UnicodeDecodeError) as exc:
+            status, detail = "FAIL", f"invalid JSON — {exc}"
+        results.append(CheckResult(status, "User/settings.json", detail))
+    if not any_file:
+        results.append(
+            CheckResult("WARN", "config files", "no managed config files "
+                        "found under either root")
+        )
+    cred = _find_credentials(roots)
+    results.append(
+        CheckResult(
+            "PASS" if cred is not None else "WARN",
+            "credentials.toml",
+            f"present (never inspected — by design): {cred}"
+            if cred is not None
+            else "absent",
+        )
+    )
+    return results
+
+
 def _find_credentials(roots: Roots) -> Path | None:
     """First existing ``credentials.toml`` across the plausible roots —
     checked by ``is_file()`` only, the file is never opened.

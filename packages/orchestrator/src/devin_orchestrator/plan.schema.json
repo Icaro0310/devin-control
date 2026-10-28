@@ -43,14 +43,15 @@
     },
     "units": {
       "type": "array",
-      "description": "Present only with `plan --from-triggers`: the enabled trigger manifests resolved into DAG order (`after` + `requires.artifacts` edges). Each unit is one work item for the fan-out; 'after' lists its resolved dependencies inside the unit set. Manifest action commands are never propagated — units are data only.",
+      "description": "Present with `plan --from-triggers` (enabled trigger manifests resolved into DAG order via `after` + `requires.artifacts` edges; 'after' lists resolved dependencies inside the unit set) and with `plan --files` (one unit per declared file; 'files' carries the constrained path, 'event'/'after' stay empty). Manifest action commands are never propagated — units are data only.",
       "items": {
         "type": "object",
         "required": ["id", "event", "after"],
         "properties": {
           "id": {"type": "string"},
           "event": {"type": ["string", "null"]},
-          "after": {"type": "array", "items": {"type": "string"}}
+          "after": {"type": "array", "items": {"type": "string"}},
+          "files": {"type": "array", "items": {"type": "string"}}
         }
       }
     },

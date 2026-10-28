@@ -37,7 +37,7 @@ and a deterministic planner; Devin executes the approved worker plan.
 
 ## What it is
 
-Two layers:
+Three layers:
 
 1. **Skill + always-on rule** (`.devin/skills/devin-orchestrator/`,
    `.devin/rules/background-workers.md`) — model instructions: when a task
@@ -47,6 +47,10 @@ Two layers:
    hard limits live in code, not in prose. The model supplies structured
    signals about the task; the planner returns how many workers are allowed,
    which profile to use, and enforces caps that cannot be argued away.
+3. **Persistent task queue** (`src/devin_orchestrator/queue_db.py`) — a
+   local SQLite store the coordinator submits units to and workers claim
+   from: atomic claims, leases with orphan recovery, bounded retries,
+   worktree locks, and `collect` before the aggregate report.
 
 ## Policy (enforced in code)
 
@@ -254,6 +258,75 @@ cp devin-orchestrator/.devin/rules/background-workers.md .devin/rules/
 The rule is always-on; the skill is model-triggered.
 
 
+### `plan --files` (declare units as a file list)
+
+When the decomposition is "one unit per file", `--files` builds the
+units directly instead of writing `units_detail` by hand:
+
+```bash
+devin-orchestrator plan '{"kind":"implementation"}' \
+    --files src/api/,src/ui/ --files tests/
+```
+
+Each file becomes one constrained unit (`unit-1…N`, echoed under `units`
+in the plan), `independent_units` is set to the file count (a spec value
+is overridden with a warning), and the same `file_collisions` check runs
+— overlapping declarations surface under `file_collisions`. `--files` is
+mutually exclusive with spec `units_detail` and with `--from-triggers`.
+
+### `queue` — the persistent task queue (SQLite)
+
+`plan` decides *how many* workers; `queue` is the durable store the
+coordinator and workers coordinate through — one SQLite file at
+`.devin-ecosystem/task-queue.db` (same directory family as
+`plans.jsonl`, `--queue DB` overrides). It is a local coordination
+store, not a broker: it records and locks, and never spawns workers or
+runs task commands — a Devin worker session claims work by running the
+CLI itself.
+
+```bash
+devin-orchestrator queue submit '{"what":"build api"}' \
+    [--files src/api/] [--repo R] [--batch B] [--key K] \
+    [--max-attempts N] [--priority N]
+devin-orchestrator queue fanout <repo> --branch NAME \
+    [--worktree PATH] [--files ...] [--batch B] [--key K]
+devin-orchestrator queue claim --worker W [--kind K] \
+    [--max-claims N] [--lease SECONDS]
+devin-orchestrator queue heartbeat <task-id> --worker W [--lease S]
+devin-orchestrator queue done <task-id> --worker W [--result '<json>']
+devin-orchestrator queue fail <task-id> --worker W --error MSG [--final]
+devin-orchestrator queue cancel <task-id> [--reason MSG]
+devin-orchestrator queue sweep
+devin-orchestrator queue collect [--batch B] [--all] [--strict]
+devin-orchestrator queue status
+```
+
+Task states: `queued → claimed → running → succeeded | failed | cancelled`.
+Claims are atomic (`BEGIN IMMEDIATE` — two workers can never hold the
+same task) and bounded per worker (`--max-claims`, hard cap 3). A claim
+carries a **lease**: the worker must `heartbeat` (which also marks the
+task `running`) before it lapses, or `sweep` recovers it — re-queued
+while attempts remain, `failed` once `--max-attempts` is exhausted.
+`fail` re-queues on the same bounded-retry rule (`--final` skips
+retries); `--key` makes resubmission idempotent; `collect` gathers
+terminal results **before** the aggregate report (the collect half of
+`collect=true`) and stamps them so a second call returns only new
+finishes — `incomplete` lists stragglers so the report can't omit them,
+and `--strict` exits 1 while any remain.
+
+`queue fanout` submits a unit targeting an isolated git worktree: it
+takes a **physical lock** on `(repo, worktree)` and `(repo, branch)`
+inside the same transaction as the task row, released only when the task
+goes terminal (a re-queued retry keeps its worktree assignment), and
+runs the `file_collisions` check against every live task on that repo —
+a submission that overlaps is refused, not warned. The queue does not
+run `git worktree add`; the claiming worker creates the worktree at the
+recorded path.
+
+Payloads, results and error strings are screened for secret-looking
+material (known token prefixes, JWTs, `key=value` credentials) at write
+time and refused — queue logs never contain secrets.
+
 `record`/`history` (OR-3) keep a **local** log of plans vs. outcomes in
 `plans.jsonl` — plan hash, worker count, mode, outcome, notes. It is a
 registry, not telemetry: nothing leaves the machine.
@@ -280,9 +353,12 @@ never breaks the record itself. `--run-id` defaults to
 
 ## Limitations
 
-The CLI only computes a JSON plan; it does not spawn workers or modify files.
-The workspace skill/rule supplies the instructions, and actual worker execution
-requires Devin's background-subagent support.
+The `plan` command only computes a JSON plan, and `queue` only records and
+locks coordination state in a local SQLite file — neither spawns workers nor
+modifies files. The workspace skill/rule supplies the instructions, and actual
+worker execution requires Devin's background-subagent support; a worker
+session claims queue work by running the CLI itself. `queue fanout` locks
+worktree/branch targets but does not run `git worktree add`.
 
 ## CPU limits
 
