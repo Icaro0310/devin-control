@@ -31,7 +31,7 @@ jobs:
       checks: write
       statuses: write
       id-token: write
-    uses: Icaro0310/devin-review-fallback/.github/workflows/ai-review-fallback.yml@main
+    uses: Icaro0310/devin-review-fallback/.github/workflows/ai-review-fallback.yml@v1
     secrets: inherit
 
   merge:
@@ -42,7 +42,7 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-    uses: Icaro0310/devin-review-fallback/.github/workflows/auto-merge.yml@main
+    uses: Icaro0310/devin-review-fallback/.github/workflows/auto-merge.yml@v1
     secrets: inherit
 
   # OPTIONAL complementary SAST layer (public repos — free tier).
@@ -52,5 +52,5 @@ jobs:
     if: github.event_name == 'pull_request_target'
     permissions:
       contents: read
-    uses: Icaro0310/devin-review-fallback/.github/workflows/sonarcloud.yml@main
+    uses: Icaro0310/devin-review-fallback/.github/workflows/sonarcloud.yml@v1
     secrets: inherit
