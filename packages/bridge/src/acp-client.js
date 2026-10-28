@@ -27,15 +27,14 @@
  *                           skips authenticate (default: the
  *                           strategy's, "devin-browser" for devin)
  *   BRIDGE_CREDENTIALS_PATH credentials.toml override (any strategy)
- *                           NOTE: there is no BRIDGE_AGENT_TOKEN_KEY —
- *                           the credentials key name itself always comes
- *                           from the selected strategy's tokenKey
- *                           ("windsurf_api_key" for devin, the only
- *                           registered strategy). A custom agent driven
- *                           via BRIDGE_AGENT_BIN therefore still reads
- *                           `windsurf_api_key = "..."` from its
- *                           credentials.toml; agents with a different
- *                           secret shape need a registry entry or
+ *   BRIDGE_AGENT_TOKEN_KEY  credentials.toml key name holding the
+ *                           session token (default: the selected
+ *                           strategy's tokenKey — "windsurf_api_key"
+ *                           for devin, the only registered strategy).
+ *                           Lets a custom agent driven via
+ *                           BRIDGE_AGENT_BIN read its own key name
+ *                           without a registry entry; agents that need
+ *                           no handshake can still use
  *                           BRIDGE_AGENT_AUTH=none.
  *   DEVIN_CLI_PATH          devin strategy: Devin CLI executable
  *                           (auto-detected from PATH)
@@ -239,19 +238,21 @@ export function agentAuthMethod({ env = process.env } = {}) {
 }
 
 /**
- * Read the session token from credentials.toml. The key name is the
- * selected strategy's `tokenKey` ("windsurf_api_key" for devin) — NOT
- * env-overridable: when BRIDGE_AGENT_BIN drives a custom agent the
- * devin strategy still supplies the key, so that agent's
- * credentials.toml must literally contain `windsurf_api_key = "..."`
- * (or skip auth with BRIDGE_AGENT_AUTH=none, or pass opts.token).
+ * Read the session token from credentials.toml. The key name is
+ * BRIDGE_AGENT_TOKEN_KEY when set, else the selected strategy's
+ * `tokenKey` ("windsurf_api_key" for devin), else the literal
+ * "windsurf_api_key" fallback. Without the env override, a custom agent
+ * driven via BRIDGE_AGENT_BIN reads the devin strategy's key — so its
+ * credentials.toml must contain `windsurf_api_key = "..."`, set the
+ * override, skip auth with BRIDGE_AGENT_AUTH=none, or pass opts.token.
  */
 export function readSessionToken() {
   const cred = credentialsPath();
   if (!fs.existsSync(cred)) {
     throw new Error(`credentials.toml not found at ${cred} — sign in to Devin Desktop first (or set BRIDGE_CREDENTIALS_PATH)`);
   }
-  const key = agentStrategy().tokenKey || "windsurf_api_key";
+  const key = process.env.BRIDGE_AGENT_TOKEN_KEY
+    || agentStrategy().tokenKey || "windsurf_api_key";
   const m = new RegExp(`${key}\\s*=\\s*"([^"]+)"`).exec(fs.readFileSync(cred, "utf8"));
   if (!m) throw new Error(`${key} missing from credentials.toml`);
   return m[1];

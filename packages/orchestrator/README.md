@@ -351,6 +351,21 @@ read-only observability: a metrics write failure warns on stderr but
 never breaks the record itself. `--run-id` defaults to
 `run-<ts>-<plan_hash>`; ids are slug-sanitised before becoming filenames.
 
+`calibrate` closes the feedback loop on `--cost-estimate`: it re-reads
+every recorded run (`plans.jsonl` + `metrics/<run_id>.json`) and
+recomputes the unit-duration defaults from what actually happened —
+mean and p50 in minutes, overall, per planned worker count and per unit
+id. A run with no per-unit detail still counts when it ran inline
+(`workers=0`): the whole run is one observation. It is read-only — the
+recomputed defaults are reported (`--json` for the full document) so the
+caller can feed them back via `est_unit_minutes`/spec scope; the
+recorded schema persists no spec `kind`/`estimated_scope`, so buckets
+are worker-count and unit-id based:
+
+```bash
+devin-orchestrator calibrate [--registry plans.jsonl] [--json]
+```
+
 ## Limitations
 
 The `plan` command only computes a JSON plan, and `queue` only records and

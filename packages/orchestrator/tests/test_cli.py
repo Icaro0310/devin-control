@@ -124,3 +124,55 @@ def test_plan_cost_estimate_writes_nothing(tmp_path, monkeypatch, capsys):
                  "--cost-estimate"]) == 0
     capsys.readouterr()
     assert list(tmp_path.iterdir()) == []  # dry-run: no files touched
+
+
+# -- calibrate ------------------------------------------------------------
+
+
+def test_calibrate_recomputes_defaults_from_recorded_runs(tmp_path, capsys):
+    reg = tmp_path / "plans.jsonl"
+    plan = '{"workers":["a","b"],"mode":"background"}'
+    assert main(["record", plan, "--outcome", "success",
+                 "--registry", str(reg), "--run-id", "r-1",
+                 "--units",
+                 ('[{"id":"api","status":"success","duration_s":600},'
+                  '{"id":"ui","status":"success","duration_s":1200}]')]
+                ) == 0
+    # inline run with no unit detail: the whole run is one observation
+    assert main(["record", '{"workers":0,"mode":"none"}',
+                 "--outcome", "success", "--registry", str(reg),
+                 "--run-id", "r-2", "--duration", "300"]) == 0
+    capsys.readouterr()
+    assert main(["calibrate", "--registry", str(reg), "--json"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["runs"] == 2 and out["runs_observed"] == 2
+    assert out["units_observed"] == 3
+    assert out["suggested_unit_minutes"]["mean_minutes"] == 11.67
+    assert out["suggested_unit_minutes"]["p50_minutes"] == 10.0
+    assert out["by_workers"]["2"]["units"] == 2
+    assert out["by_workers"]["0"]["p50_minutes"] == 5.0
+    assert out["by_unit"]["api"]["mean_minutes"] == 10.0
+    assert out["current_scope_defaults"]["medium"] == 30
+    assert "recomputed from recorded runs" in out["note"]
+
+
+def test_calibrate_empty_registry(tmp_path, capsys):
+    reg = tmp_path / "plans.jsonl"
+    assert main(["calibrate", "--registry", str(reg), "--json"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["runs"] == 0 and out["units_observed"] == 0
+    assert out["suggested_unit_minutes"] is None
+    assert main(["calibrate", "--registry", str(reg)]) == 0
+    assert "no durations recorded yet" in capsys.readouterr().out
+
+
+def test_calibrate_skips_missing_metrics(tmp_path, capsys):
+    reg = tmp_path / "plans.jsonl"
+    assert main(["record", '{"workers":1}', "--outcome", "success",
+                 "--registry", str(reg), "--run-id", "r-1"]) == 0
+    capsys.readouterr()
+    (tmp_path / "metrics" / "r-1.json").unlink()  # observability gap
+    assert main(["calibrate", "--registry", str(reg), "--json"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["runs"] == 1 and out["metrics_missing"] == 1
+    assert out["suggested_unit_minutes"] is None
