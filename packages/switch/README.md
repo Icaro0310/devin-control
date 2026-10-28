@@ -87,7 +87,10 @@ devin-switch export personal --out personal.json
 devin-switch import personal.json       # DRY-RUN: validate + preview only
 devin-switch import personal.json --apply            # create profiles/personal/
 devin-switch import personal.json --apply --name copy --force
+devin-switch apply personal             # DRY-RUN as JSON (machine contract)
+devin-switch apply personal --apply     # JSON result; same snapshot+verify path
 devin-switch doctor                     # config sanity + closest profile
+devin-switch verify-env                 # parse + required keys + path checks
 ```
 
 Every command accepts `--data-dir`, `--config-dir` and `--profiles-dir`
@@ -97,7 +100,28 @@ order: `--profiles-dir` → `$DEVIN_SWITCH_PROFILES_DIR` → `./profiles` →
 the bundled examples.
 
 Exit code is `0` on success/clean dry-run and `1` on errors — and for
-`doctor`, on any `FAIL` check (like `devin-doctor`).
+`doctor` and `verify-env`, on any `FAIL` check (like `devin-doctor`).
+
+### `verify-env` — deterministic environment verification
+
+`doctor` is diagnostic (warnings stay warnings); `verify-env` is the
+strict gate: it checks every managed file that exists under both roots
+— `config.json`, `mcp_config.json`, `hooks.v1.json`,
+`User/settings.json` — and prints one explicit `PASS`/`WARN`/`FAIL`
+line per check plus a summary:
+
+- **Parses** — malformed JSONC fails loudly (comments and trailing
+  commas are tolerated);
+- **Required keys** — `mcp_config.json` must carry `mcpServers`
+  (`config.json`/`settings.json` are legitimately sparse and require
+  none);
+- **Shape** — the same hooks/MCP shape validators as `doctor`;
+- **Referenced paths** — each `mcpServers.*.command` that looks like a
+  filesystem path (not a bare `PATH` binary like `python`/`uvx`) and
+  each `cwd` must exist;
+- **`credentials.toml`** — reported by presence only, never opened.
+
+Any `FAIL` → exit `1`. Nothing is ever written.
 
 ## Profiles
 
@@ -117,7 +141,9 @@ profiles/
 
 Overlays are **whole-file replacements**, not merges — what the profile
 ships is what the file becomes. Files are JSONC: `//` and `/* */`
-comments allowed, trailing commas not.
+comments allowed, and a comma that directly closes a `]`/`}` container
+is tolerated (leading/double commas and other malformed input still
+fail loudly).
 
 ### Exporting and importing profiles
 
@@ -173,10 +199,68 @@ restores the snapshot (and deletes files the switch created), then
 appends a `rollback` entry — the backup is *not* consumed, so you can
 switch forward again afterwards.
 
+## Machine-readable apply (devin-devkit contract)
+
+`devin-switch apply <profile>` runs the exact same
+plan → snapshot → verify → write → journal path as `use`, with one
+difference that matters to callers: **stdout is always a single JSON
+document** — on dry-run, on a real apply and on failure — so a wrapper
+never scrapes human output. The dry-run-by-default rule is unchanged;
+`--apply` writes. This is the surface `devin-devkit` consumes when its
+`apply` unifies tool install with config-profile selection.
+
+```bash
+devin-switch apply work            # JSON plan — writes nothing
+devin-switch apply work --apply    # JSON result — files actually swapped
+```
+
+Success envelope (`schema: "devin-switch/apply@1"`):
+
+```json
+{
+  "schema": "devin-switch/apply@1",
+  "ok": true,
+  "profile": "work",
+  "dry_run": false,
+  "actions": {"create": 1, "modify": 3},
+  "files": [
+    {"rel": "config.json", "target": "/abs/path", "action": "modify",
+     "skip_reason": ""}
+  ],
+  "files_changed": ["config.json"],
+  "skipped": [],
+  "backup_dir": "/abs/.devin-ecosystem/switch-backups/<ts>",
+  "journal": "/abs/.devin-ecosystem/switch-journal.jsonl",
+  "rollback": "devin-switch rollback --apply"
+}
+```
+
+Failures keep the shape: `ok: false`, an `error_type` —
+`unknown_profile`, `invalid_manifest` (a `profile.json` that does not
+parse fails closed here, where the read commands degrade to empty
+metadata) or `snapshot_failed` — plus a human `error` string. The exit
+code is still `1`, and a plain `error: …` line goes to stderr for logs;
+stdout stays parseable either way.
+
+**The handshake** (implemented devkit-side, in its repo): `devin-devkit
+apply <profile>` resolves the profile in its own manifest — following
+`alias_of` chains — installs the tool list, then shells out to
+`devin-switch apply <resolved-name> --apply` to select the matching
+config profile. The switch profile is looked up by that resolved name,
+so a devkit profile `operations` applies `profiles/operations/`; the
+name mapping and manifest resolution live in devin-devkit.
+
+Same-env Python callers get the identical contract from
+`devin_switch.apply_profile(name, roots, apply=True)`
+(`devin_switch/api.py`, re-exported at the package root): it returns the
+envelope as a dict and raises `ProfileError` → `unknown_profile`,
+`ManifestError` → `invalid_manifest` and `SnapshotError` →
+`snapshot_failed` for the failure modes above.
+
 ## Development
 
 ```bash
-python -m pytest            # 89 tests, all on synthetic tmp-dir fixtures
+python -m pytest            # 128 tests, all on synthetic tmp-dir fixtures
 python -m devin_switch.cli doctor --profiles-dir profiles
 ```
 

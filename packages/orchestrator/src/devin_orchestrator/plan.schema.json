@@ -31,6 +31,30 @@
         "nesting": {"type": "string"}
       }
     },
+    "signals": {
+      "type": "object",
+      "description": "Machine signals collected by signals.collect_signals at plan time (ram_pressure, inside_worker, ram_*_mb). A null ram_pressure means the host could not be measured, not that it is healthy.",
+      "properties": {
+        "inside_worker": {"type": "boolean"},
+        "ram_total_mb": {"type": ["integer", "null"]},
+        "ram_available_mb": {"type": ["integer", "null"]},
+        "ram_pressure": {"type": ["boolean", "null"]}
+      }
+    },
+    "units": {
+      "type": "array",
+      "description": "Present with `plan --from-triggers` (enabled trigger manifests resolved into DAG order via `after` + `requires.artifacts` edges; 'after' lists resolved dependencies inside the unit set) and with `plan --files` (one unit per declared file; 'files' carries the constrained path, 'event'/'after' stay empty). Manifest action commands are never propagated — units are data only.",
+      "items": {
+        "type": "object",
+        "required": ["id", "event", "after"],
+        "properties": {
+          "id": {"type": "string"},
+          "event": {"type": ["string", "null"]},
+          "after": {"type": "array", "items": {"type": "string"}},
+          "files": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
     "cost_estimate": {
       "type": "object",
       "description": "Present only with --cost-estimate: per-unit duration estimate in minutes (planning label, not billing).",

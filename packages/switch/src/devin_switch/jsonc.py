@@ -1,7 +1,12 @@
 """Minimal JSONC reader — Devin config files allow ``//`` and ``/* */``
-comments but not trailing commas. Same contract as devin-doctor's
+comments and tolerate trailing commas. Same contract as devin-doctor's
 ``_strip_jsonc`` / ``_load_jsonc``, re-implemented so devin-switch stays
 stdlib-only with no cross-package dependency.
+
+Trailing commas are removed only when they close a container — a ``,``
+whose next non-whitespace character is ``]`` or ``}``, and that follows
+a real value or container close (so ``{,}`` and ``[1,,2]`` stay malformed
+and fail loudly). Commas inside string literals are never touched.
 """
 
 from __future__ import annotations
@@ -44,6 +49,60 @@ def strip_jsonc(text: str) -> str:
             i += 2
             continue
         out.append(c)
+        i += 1
+    return _strip_trailing_commas("".join(out))
+
+
+def _strip_trailing_commas(text: str) -> str:
+    """Drop commas that directly close ``]``/``}``, respecting strings.
+
+    A comma is removable only when (a) its previous significant
+    character is a value/closing token — not ``{``, ``[``, ``:``, ``,``
+    or start-of-input — and (b) its next non-whitespace character is
+    ``]`` or ``}``. Both passes scan character-by-character with the
+    same string-literal state machine as the comment stripper, so a
+    ``,`` or ``]`` inside ``"…"`` is never misread.
+    """
+    out: list[str] = []
+    i, n = 0, len(text)
+    in_str = False
+    prev_significant = ""
+    while i < n:
+        c = text[i]
+        if in_str:
+            out.append(c)
+            if c == "\\" and i + 1 < n:
+                out.append(text[i + 1])
+                i += 2
+                continue
+            if c == '"':
+                in_str = False
+            i += 1
+            continue
+        if c == '"':
+            in_str = True
+            out.append(c)
+            prev_significant = '"'
+            i += 1
+            continue
+        if c == ",":
+            j = i + 1
+            while j < n and text[j] in " \t\r\n":
+                j += 1
+            if (
+                j < n
+                and text[j] in "]}"
+                and prev_significant not in ("", "{", "[", ":", ",")
+            ):
+                i += 1  # drop the comma; the closer is emitted next loop
+                continue
+            out.append(c)
+            prev_significant = ","
+            i += 1
+            continue
+        out.append(c)
+        if c not in " \t\r\n":
+            prev_significant = c
         i += 1
     return "".join(out)
 

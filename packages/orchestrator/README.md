@@ -37,7 +37,7 @@ and a deterministic planner; Devin executes the approved worker plan.
 
 ## What it is
 
-Two layers:
+Three layers:
 
 1. **Skill + always-on rule** (`.devin/skills/devin-orchestrator/`,
    `.devin/rules/background-workers.md`) — model instructions: when a task
@@ -47,6 +47,10 @@ Two layers:
    hard limits live in code, not in prose. The model supplies structured
    signals about the task; the planner returns how many workers are allowed,
    which profile to use, and enforces caps that cannot be argued away.
+3. **Persistent task queue** (`src/devin_orchestrator/queue_db.py`) — a
+   local SQLite store the coordinator submits units to and workers claim
+   from: atomic claims, leases with orphan recovery, bounded retries,
+   worktree locks, and `collect` before the aggregate report.
 
 ## Policy (enforced in code)
 
@@ -77,7 +81,80 @@ execute.
 ```bash
 devin-orchestrator plan '<spec>' --explain   # human-readable decision walkthrough
 devin-orchestrator schema spec|plan          # print the published JSON Schemas
+devin-orchestrator signals                   # the machine signals the planner honours
 ```
+
+`signals` prints what `collect_signals()` measures on this host:
+`ram_pressure` (MemAvailable below a floor scaled to MemTotal),
+`inside_worker`, and the raw RAM figures. A `null` value means the host
+could not be measured, not that it is healthy. When `ram_pressure` is
+true, `plan_task` caps fan-out at one worker and says so in
+`warnings`; every plan echoes the signals it saw under `signals`.
+
+### `plan --from-triggers` (trigger manifests as DAG input)
+
+The planner can also consume the **same trigger-manifest format** the PAS
+session-dispatcher runs — a directory of `*.yaml` / `*.yml` / `*.json`
+files shaped like `.devin/catalog/triggers/` (spec: devin-skill-catalog
+§8):
+
+```bash
+devin-orchestrator plan --from-triggers .devin/catalog/triggers/
+devin-orchestrator plan --from-triggers DIR --event SessionEnd
+```
+
+Each *enabled* manifest becomes one work unit. Dependency edges come from
+`after:` (order) and `requires.artifacts:` (data — resolved to the
+producing handler), exactly as the dispatcher interprets them; the plan
+echoes the resolved DAG order under `units` (`id`, `event`, `after`) so
+the caller can schedule in order. All hard contracts still apply:
+`ram_pressure` caps workers, `DEVIN_INSIDE_SUBAGENT` still forbids
+nesting, and a fanned-out plan still carries `collect=true`. `--event`
+restricts the unit set to one trigger event.
+
+Validation is strict about what the DAG consumes: a missing `after`
+target, an unproduced `requires.artifacts`, a duplicate id, or a
+dependency **cycle fails loudly** (the error names the cycle path:
+`cycle in DAG: a -> b -> a`). Manifests that are only observers keep the
+plan read-only (`subagent_explore`); anything that mutates needs write
+access. Manifest `action.command` strings are parsed but **never
+propagated** — the plan stays data-only.
+
+YAML is parsed by a strict stdlib subset (zero dependencies) covering the
+manifest grammar — block maps, scalar lists (block or `[a, b]`), quoted
+and bare scalars, comments. Anchors, block scalars, inline maps and
+multi-document markers are rejected with a line-numbered error rather
+than misparsed. `.json` manifests are parsed as JSON, matching the
+catalog loader.
+
+### `plan --emit-manifest` (plan as a PAS trigger manifest)
+
+The plan can be serialized as a **trigger manifest** in the format
+`devin-catalog` consumes (devin-skill-catalog §8) — drop it into
+`.devin/catalog/triggers/` and `devin-catalog.py schedule plan|install`
+puts the fan-out on a clock:
+
+```bash
+devin-orchestrator plan '<spec>' --emit-manifest \
+    [--schedule 'daily 05:30'] [--manifest-event SessionSweep] \
+    [--manifest-id myteam.nightly-fanout] [--severity p1] \
+    [--format yaml|json] [--out FILE]
+```
+
+The manifest carries `id` (`orchestrator.plan-<spec-hash>` by default,
+deterministic per spec), `version`, `owner`, `enabled`, `severity`,
+`class: enricher`, a `trigger` (`Scheduled` requires a valid
+`--schedule`; any other event ships without one), `idempotency.disabled`
+(the catalog requires it for constant Scheduled input),
+`on_hook_failure: fail-open`, and `artifacts.output: worker-plan`.
+
+`action.command` is the orchestrator's own **read-only** `plan` call with
+the canonical spec as its single JSON argument — the units ride inside
+that job description, never as shell fragments. Firing the manifest
+re-derives the plan under the signals live at that moment (a pressured
+host still caps at one worker) instead of replaying a frozen count. The
+emitted manifest validates against the real `trigger.schema.json`.
+
 
 ### `--cost-estimate`
 
@@ -181,6 +258,75 @@ cp devin-orchestrator/.devin/rules/background-workers.md .devin/rules/
 The rule is always-on; the skill is model-triggered.
 
 
+### `plan --files` (declare units as a file list)
+
+When the decomposition is "one unit per file", `--files` builds the
+units directly instead of writing `units_detail` by hand:
+
+```bash
+devin-orchestrator plan '{"kind":"implementation"}' \
+    --files src/api/,src/ui/ --files tests/
+```
+
+Each file becomes one constrained unit (`unit-1…N`, echoed under `units`
+in the plan), `independent_units` is set to the file count (a spec value
+is overridden with a warning), and the same `file_collisions` check runs
+— overlapping declarations surface under `file_collisions`. `--files` is
+mutually exclusive with spec `units_detail` and with `--from-triggers`.
+
+### `queue` — the persistent task queue (SQLite)
+
+`plan` decides *how many* workers; `queue` is the durable store the
+coordinator and workers coordinate through — one SQLite file at
+`.devin-ecosystem/task-queue.db` (same directory family as
+`plans.jsonl`, `--queue DB` overrides). It is a local coordination
+store, not a broker: it records and locks, and never spawns workers or
+runs task commands — a Devin worker session claims work by running the
+CLI itself.
+
+```bash
+devin-orchestrator queue submit '{"what":"build api"}' \
+    [--files src/api/] [--repo R] [--batch B] [--key K] \
+    [--max-attempts N] [--priority N]
+devin-orchestrator queue fanout <repo> --branch NAME \
+    [--worktree PATH] [--files ...] [--batch B] [--key K]
+devin-orchestrator queue claim --worker W [--kind K] \
+    [--max-claims N] [--lease SECONDS]
+devin-orchestrator queue heartbeat <task-id> --worker W [--lease S]
+devin-orchestrator queue done <task-id> --worker W [--result '<json>']
+devin-orchestrator queue fail <task-id> --worker W --error MSG [--final]
+devin-orchestrator queue cancel <task-id> [--reason MSG]
+devin-orchestrator queue sweep
+devin-orchestrator queue collect [--batch B] [--all] [--strict]
+devin-orchestrator queue status
+```
+
+Task states: `queued → claimed → running → succeeded | failed | cancelled`.
+Claims are atomic (`BEGIN IMMEDIATE` — two workers can never hold the
+same task) and bounded per worker (`--max-claims`, hard cap 3). A claim
+carries a **lease**: the worker must `heartbeat` (which also marks the
+task `running`) before it lapses, or `sweep` recovers it — re-queued
+while attempts remain, `failed` once `--max-attempts` is exhausted.
+`fail` re-queues on the same bounded-retry rule (`--final` skips
+retries); `--key` makes resubmission idempotent; `collect` gathers
+terminal results **before** the aggregate report (the collect half of
+`collect=true`) and stamps them so a second call returns only new
+finishes — `incomplete` lists stragglers so the report can't omit them,
+and `--strict` exits 1 while any remain.
+
+`queue fanout` submits a unit targeting an isolated git worktree: it
+takes a **physical lock** on `(repo, worktree)` and `(repo, branch)`
+inside the same transaction as the task row, released only when the task
+goes terminal (a re-queued retry keeps its worktree assignment), and
+runs the `file_collisions` check against every live task on that repo —
+a submission that overlaps is refused, not warned. The queue does not
+run `git worktree add`; the claiming worker creates the worktree at the
+recorded path.
+
+Payloads, results and error strings are screened for secret-looking
+material (known token prefixes, JWTs, `key=value` credentials) at write
+time and refused — queue logs never contain secrets.
+
 `record`/`history` (OR-3) keep a **local** log of plans vs. outcomes in
 `plans.jsonl` — plan hash, worker count, mode, outcome, notes. It is a
 registry, not telemetry: nothing leaves the machine.
@@ -222,9 +368,12 @@ devin-orchestrator calibrate [--registry plans.jsonl] [--json]
 
 ## Limitations
 
-The CLI only computes a JSON plan; it does not spawn workers or modify files.
-The workspace skill/rule supplies the instructions, and actual worker execution
-requires Devin's background-subagent support.
+The `plan` command only computes a JSON plan, and `queue` only records and
+locks coordination state in a local SQLite file — neither spawns workers nor
+modifies files. The workspace skill/rule supplies the instructions, and actual
+worker execution requires Devin's background-subagent support; a worker
+session claims queue work by running the CLI itself. `queue fanout` locks
+worktree/branch targets but does not run `git worktree add`.
 
 ## CPU limits
 

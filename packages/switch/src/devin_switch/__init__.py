@@ -9,4 +9,7 @@ profiles, with verified snapshots before any write and a rollback journal.
 
 from __future__ import annotations
 
+from devin_switch.api import apply_profile
+
+__all__ = ["apply_profile"]
 __version__ = "0.1.1"

@@ -65,3 +65,6 @@ def test_list_diff_doctor_offline(roots, capsys):
     assert "diff work -> home" in out
 
     assert cli.main(cli_argv(roots, "doctor")) == 0
+
+    assert cli.main(cli_argv(roots, "verify-env")) == 0
+    assert "PASS" in capsys.readouterr().out
