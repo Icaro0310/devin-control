@@ -41,7 +41,7 @@ Use `--data-dir`/`--config-dir` where the tool documents them for non-default lo
 - **Blocked installers:** if winget/Store are disabled by policy, `uv` installs as a standalone binary, download the GitHub release zip, extract to `%LOCALAPPDATA%\bin`, add it to PATH.
 - **Long paths:** keep checkout/install roots short (`C:\dev`), MAX_PATH (260 chars) can still bite inside virtualenvs; `LongPathsEnabled` needs admin, short roots do not.
 - **EDR/antivirus:** if a scan kills the install, retry with an exclusion or ask IT to allowlist `%LOCALAPPDATA%\uv` and `%USERPROFILE%\.local\bin`. These tools never elevate or listen on the network by default.
-- **Offline/air-gapped:** `pip download <package> -d wheels\` on a connected machine, copy the folder, then `pip install --no-index --find-links wheels\` on the target (pure-Python tools; native deps need a matching platform wheel). For `source_only` tools installed from a copied checkout, stage the build backend too (`pip download setuptools wheel`), then install with `pip install --no-index --find-links wheels\ --no-build-isolation .` inside the checkout.
+- **Offline/air-gapped:** `pip download <package> -d wheels\` on a connected machine, copy the folder, then `pip install --no-index --find-links wheels\` on the target (pure-Python tools; native deps need a matching platform wheel). For `source_only` tools installed from a copied checkout, stage the build backend too (`pip download setuptools wheel -d wheels\`, into the folder being copied) and install it first (`pip install --no-index --find-links wheels\ setuptools wheel`; `--no-build-isolation` needs the backend installed, not only staged), then install with `pip install --no-index --find-links wheels\ --no-build-isolation .` inside the checkout.
 - **Fully local runtime:** the standalone dashboard binds 127.0.0.1 only and reads `sessions.db`. Opt-in surfaces that leave the machine, all off by default and absent under local-only: `probe.py` POSTs to `OFFICE_HUB`(s), `hub.py` fetches `OFFICE_ECO_URL`, and `OFFICE_CONTROL_ENABLED=1` spawns `devin acp`.
 
 ## Zscaler
@@ -63,7 +63,7 @@ Zscaler é comum em ambientes corporativos e se comporta diferente de um proxy g
 
 ## Recurring runs (optional)
 
-_Long-running daemon. `schtasks` cannot set "Start in", so either call `daemon.py` by absolute path as below or open the task in Task Scheduler afterwards and set Actions → Edit → "Start in" to the checkout directory._
+_Long-running daemon. `schtasks` cannot set "Start in", so either call `daemon.py` by absolute path as below (installed users can put `devin-office --port 8788` in the `.cmd` instead — the wrapper already prepends `%USERPROFILE%\.local\bin` to `PATH`) or open the task in Task Scheduler afterwards and set Actions → Edit → "Start in" to the checkout directory._
 
 Quoted path arguments inside `/tr` fail differently in cmd.exe and PowerShell 5.1, so this job goes through a wrapper `.cmd` file in your own profile directory (quoting inside the file works normally, and no other user can replace it). The task inherits your user `PATH`, so the wrapper first prepends the standard tool directory (`%USERPROFILE%\.local\bin`); if the tool lives elsewhere, write its full path inside the `.cmd`. Register from PowerShell with the `ScheduledTask` cmdlets, which take the path literally and replace cleanly on rerun (`-Force`):
 
@@ -75,7 +75,7 @@ Save this as `%USERPROFILE%\devin-tasks\devin-office.cmd`:
 
 ```batch
 set "PATH=%USERPROFILE%\.local\bin;%PATH%"
-py "<CAMINHO_DO_CHECKOUT>\daemon.py" --port 8788
+py "<CAMINHO_DO_CHECKOUT>\src\devin_office\daemon.py" --port 8788
 ```
 
 ```powershell
