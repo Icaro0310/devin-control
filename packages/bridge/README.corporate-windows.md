@@ -23,6 +23,20 @@ npm install --global "@icaro0310/devin-bridge"
 Session data normally lives under `%APPDATA%\devin\cli\`; UI state and ACP stores under `%APPDATA%\Devin\User\`.
 Use `--data-dir`/`--config-dir` where the tool documents them for non-default locations.
 
+## Agent env
+
+The bridge drives `devin.exe acp` by default (`devin.exe` on `PATH`, the per-user install dir, or `DEVIN_CLI_PATH`); env vars select a different ACP-compatible agent or override its locations — per-user env vars, no admin needed:
+
+```powershell
+$env:BRIDGE_AGENT = "devin"                                   # strategy name (default)
+$env:BRIDGE_AGENT_BIN = "C:\tools\my-agent\agent.exe"         # explicit executable
+$env:BRIDGE_AGENT_ARGS = '["--acp"]'                          # argv override (JSON array)
+$env:BRIDGE_AGENT_AUTH = "none"                               # auth methodId; "none" skips
+$env:BRIDGE_CREDENTIALS_PATH = "C:\tools\my-agent\credentials.toml"
+```
+
+`DEVIN_CLI_PATH`/`DEVIN_CREDENTIALS_PATH` remain valid legacy overrides. See [README.md](README.md#choosing-the-agent-bridge_agent) for the resolution order.
+
 ## Environment notes
 
 - Keep execution local; do not configure VM, QwenPaw, external compute or workload delegation.
@@ -38,7 +52,7 @@ Use `--data-dir`/`--config-dir` where the tool documents them for non-default lo
 - **Blocked installers:** if winget/Store are disabled by policy, `uv` installs as a standalone binary, download the GitHub release zip, extract to `%LOCALAPPDATA%\bin`, add it to PATH.
 - **Long paths:** keep checkout/install roots short (`C:\dev`), MAX_PATH (260 chars) can still bite inside virtualenvs; `LongPathsEnabled` needs admin, short roots do not.
 - **EDR/antivirus:** if a scan kills the install, retry with an exclusion or ask IT to allowlist `%LOCALAPPDATA%\uv` and `%USERPROFILE%\.local\bin`. These tools never elevate or listen on the network by default.
-- **Offline/air-gapped:** `pip download <package> -d wheels\` on a connected machine, copy the folder, then `pip install --no-index --find-links wheels\` on the target (pure-Python tools; native deps need a matching platform wheel). For `source_only` tools installed from a copied checkout, stage the build backend too (`pip download setuptools wheel`), then install with `pip install --no-index --find-links wheels\ --no-build-isolation .` inside the checkout.
+- **Offline/air-gapped:** `pip download <package> -d wheels\` on a connected machine, copy the folder, then `pip install --no-index --find-links wheels\` on the target (pure-Python tools; native deps need a matching platform wheel). For `source_only` tools installed from a copied checkout, stage the build backend too (`pip download setuptools wheel -d wheels\`, into the folder being copied) and install it first (`pip install --no-index --find-links wheels\ setuptools wheel`; `--no-build-isolation` needs the backend installed, not only staged), then install with `pip install --no-index --find-links wheels\ --no-build-isolation .` inside the checkout.
 - **Fully local runtime:** this package launches `devin.exe acp`, it requires an authenticated Devin runtime and Cognition reachability, i.e. delegated external compute, and is therefore not part of the local-only guarantee.
 
 ## Zscaler
