@@ -21,6 +21,20 @@ npm install --global '@icaro0310/devin-bridge'
 Session data normally lives under `${XDG_DATA_HOME:-$HOME/.local/share}/devin/cli/`; UI state and ACP stores under `${XDG_CONFIG_HOME:-$HOME/.config}/Devin/User/`.
 Use `--data-dir`/`--config-dir` where the tool documents them for non-default locations.
 
+## Agent env
+
+The bridge drives `devin acp` by default (`devin` on `PATH` or `DEVIN_CLI_PATH`); env vars select a different ACP-compatible agent or override its locations:
+
+```bash
+export BRIDGE_AGENT=devin                              # strategy name (default)
+export BRIDGE_AGENT_BIN=/opt/my-agent/bin/cli          # explicit executable
+export BRIDGE_AGENT_ARGS='["--acp"]'                   # argv override (JSON array)
+export BRIDGE_AGENT_AUTH=none                          # auth methodId; "none" skips
+export BRIDGE_CREDENTIALS_PATH=/etc/my-agent/credentials.toml
+```
+
+`DEVIN_CLI_PATH`/`DEVIN_CREDENTIALS_PATH` remain valid legacy overrides. See [README.md](README.md#choosing-the-agent-bridge_agent) for the resolution order.
+
 ## Environment notes
 
 - Delegated runtime is optional; this guide installs local tooling only.
