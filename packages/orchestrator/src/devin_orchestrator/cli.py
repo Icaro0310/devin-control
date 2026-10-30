@@ -475,6 +475,26 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "queue":
         return _cmd_queue(args)
 
+    if args.command == "calibrate":
+        reg = args.registry or plan_registry.default_registry_path()
+        report = plan_registry.calibrate(reg)
+        report["current_scope_defaults"] = dict(SCOPE_UNIT_MINUTES)
+        if args.json:
+            print(json.dumps(report, indent=2))
+        else:
+            print(f"{report['runs']} recorded run(s), "
+                  f"{report['units_observed']} unit duration(s) observed")
+            suggested = report["suggested_unit_minutes"]
+            if suggested:
+                print(f"suggested unit minutes: "
+                      f"mean={suggested['mean_minutes']:g} "
+                      f"p50={suggested['p50_minutes']:g}")
+            else:
+                print("no durations recorded yet — keep the current "
+                      "scope defaults")
+            print(f"({report['note']})")
+        return 0
+
     if args.files and args.from_triggers is not None:
         print("error: --files does not apply to --from-triggers",
               file=sys.stderr)
@@ -509,28 +529,6 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
 
-    if args.command == "calibrate":
-        reg = args.registry or plan_registry.default_registry_path()
-        report = plan_registry.calibrate(reg)
-        report["current_scope_defaults"] = dict(SCOPE_UNIT_MINUTES)
-        if args.json:
-            print(json.dumps(report, indent=2))
-        else:
-            print(f"{report['runs']} recorded run(s), "
-                  f"{report['units_observed']} unit duration(s) observed")
-            suggested = report["suggested_unit_minutes"]
-            if suggested:
-                print(f"suggested unit minutes: "
-                      f"mean={suggested['mean_minutes']:g} "
-                      f"p50={suggested['p50_minutes']:g}")
-            else:
-                print("no durations recorded yet — keep the current "
-                      "scope defaults")
-            print(f"({report['note']})")
-        return 0
-
-    raw = args.spec if args.spec is not None else args.spec_file.read_text(
-        encoding="utf-8")
     try:
         if args.from_triggers is not None:
             spec, units, dag_warnings = trigger_manifests.spec_from_triggers(
