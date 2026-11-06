@@ -1,8 +1,9 @@
 name: ci
 
-# Secrets scan runs on every change; per-package test workflows
-# (test-*.yml) are scoped by path so a change under packages/x/ runs
-# only that package's suite.
+# Secrets scan runs on every change; per-package test jobs are gated on
+# the `changes` diff (job-level path gating, replacing the path-filtered
+# test-*.yml PR triggers). The always-on `ci-gate` job aggregates every
+# result into the single required check.
 
 on:
   push:
@@ -13,6 +14,39 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      bridge: ${{ steps.f.outputs.bridge }}
+      office: ${{ steps.f.outputs.office }}
+      orchestrator: ${{ steps.f.outputs.orchestrator }}
+      switch: ${{ steps.f.outputs.switch }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - id: f
+        run: |
+          base="${{ github.event.pull_request.base.sha || github.event.before }}"
+          if [ -z "$base" ] || ! git rev-parse --verify "$base" >/dev/null 2>&1; then
+            base="HEAD~1"
+          fi
+          diff_ok=0
+          git diff --name-only "$base" HEAD >/dev/null 2>&1 && diff_ok=1
+          # diff not computable -> run every suite (safe default)
+          for spec in \
+            'bridge:packages/bridge/** .github/workflows/test-bridge.yml' \
+            'office:packages/office/** .github/workflows/test-office.yml .github/workflows/pypi-publish.yml' \
+            'orchestrator:packages/orchestrator/** .github/workflows/test-orchestrator.yml' \
+            'switch:packages/switch/** .github/workflows/test-switch.yml' \
+          ; do
+            pkg="${spec%%:*}"; paths="${spec#*:}"
+            if [ "$diff_ok" = "0" ] || git diff --name-only "$base" HEAD -- $paths | grep -q .; then
+              echo "$pkg=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "$pkg=false" >> "$GITHUB_OUTPUT"
+            fi
+          done
   lint:
     runs-on: ubuntu-latest
     steps:
@@ -32,3 +66,178 @@ jobs:
     permissions:
       contents: read
     uses: Icaro0310/devin-powerups/.github/workflows/config-restricted-check.yml@v1
+  test-bridge:
+    needs: changes
+    if: needs.changes.outputs.bridge == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+        node: ["22", "24"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Test
+        working-directory: packages/bridge
+        run: node --test
+  test-office:
+    needs: changes
+    if: needs.changes.outputs.office == 'true'
+    permissions:
+      contents: read
+    uses: Icaro0310/devin-powerups/.github/workflows/python-test.yml@v1
+    with:
+      package-dir: packages/office
+  test-office-quickstart:
+    needs: changes
+    if: needs.changes.outputs.office == 'true'
+    # The README quick start (pip install -e . -> devin-office --port 8788
+    # -> GET /api/state) was never exercised in CI. This job runs it
+    # verbatim on both documented platforms (bash on Windows matches the
+    # shared commands; the PS guide documents the same two commands).
+    name: quickstart smoke (${{ matrix.os }})
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.11"
+
+      - name: Install (README quick start)
+        working-directory: packages/office
+        shell: bash
+        run: pip install -e .
+
+      - name: Serve + probe /api/state
+        shell: bash
+        env:
+          # Isolation: every store the daemon resolves is pointed at
+          # runner temp — OFFICE_DATA_DIR for the sessions.db root,
+          # OFFICE_CONF_DIR for UI config, OFFICE_STATE_DIR for
+          # kanban.json. HOME/XDG/APPDATA cover ecomon's home-dir scans
+          # and any platform fallback the explicit vars would miss, so
+          # the job provably never touches a real Devin store.
+          OFFICE_DATA_DIR: ${{ runner.temp }}/office-smoke/data
+          OFFICE_CONF_DIR: ${{ runner.temp }}/office-smoke/conf
+          OFFICE_STATE_DIR: ${{ runner.temp }}/office-smoke/state
+          OFFICE_ECOSYSTEM_DIR: ${{ runner.temp }}/office-smoke/eco
+          HOME: ${{ runner.temp }}/office-smoke/home
+          USERPROFILE: ${{ runner.temp }}/office-smoke/home
+          XDG_DATA_HOME: ${{ runner.temp }}/office-smoke/xdg-data
+          XDG_CONFIG_HOME: ${{ runner.temp }}/office-smoke/xdg-config
+          XDG_STATE_HOME: ${{ runner.temp }}/office-smoke/xdg-state
+          APPDATA: ${{ runner.temp }}/office-smoke/appdata
+          LOCALAPPDATA: ${{ runner.temp }}/office-smoke/local-appdata
+          # Unbuffered so the startup line (resolved sessions.db path)
+          # lands in the log even though the server never exits cleanly.
+          PYTHONUNBUFFERED: "1"
+        run: |
+          set -euo pipefail
+          mkdir -p "$OFFICE_DATA_DIR" "$OFFICE_CONF_DIR" \
+                   "$OFFICE_STATE_DIR" "$HOME"
+          LOG="${RUNNER_TEMP}/office-smoke-daemon.log"
+          STATE_JSON="${RUNNER_TEMP}/office-smoke-state.json"
+
+          devin-office --port 8788 >"$LOG" 2>&1 &
+          SRV=$!
+          trap 'kill "$SRV" 2>/dev/null || true' EXIT
+
+          # Readiness: poll until /api/state answers 200 with a real
+          # (non-"loading") payload — proves the background collect loop
+          # ran against the isolated stores, not just that the port opened.
+          ready=""
+          for i in $(seq 1 60); do
+            if ! kill -0 "$SRV" 2>/dev/null; then
+              echo "::error::devin-office exited before becoming ready"
+              cat "$LOG" || true
+              exit 1
+            fi
+            code=$(curl -s -o "$STATE_JSON" -w '%{http_code}' \
+              http://127.0.0.1:8788/api/state || true)
+            if [ "$code" = "200" ] && ! grep -q '"loading"' "$STATE_JSON"; then
+              ready=1
+              break
+            fi
+            sleep 0.5
+          done
+          if [ -z "$ready" ]; then
+            echo "::error::devin-office never served a ready /api/state (30s)"
+            cat "$LOG" || true
+            exit 1
+          fi
+          echo "ready after ${i} poll(s)"
+          cat "$LOG"   # prints resolved sessions.db path (inside runner temp)
+
+          python - "$STATE_JSON" <<'PY'
+          import json, sys
+          body = json.load(open(sys.argv[1], encoding="utf-8"))
+          assert isinstance(body, dict), body
+          assert isinstance(body.get("agents"), list)
+          assert isinstance(body.get("services"), dict)
+          assert isinstance(body.get("events"), list)
+          assert isinstance(body.get("ts"), int)
+          # A runner has no Devin stores, so the documented
+          # "sessions.db not found" payload is the expected shape —
+          # what must not happen is a 500 or a non-JSON body.
+          err = body.get("error", "")
+          assert not err or "sessions.db not found" in err, err
+          print("state ok:", json.dumps(
+              {k: body.get(k) for k in ("ts", "agents", "error")}))
+          PY
+
+          # The README also promises the dashboard page on the same port.
+          code=$(curl -s -o "${RUNNER_TEMP}/office-smoke-index.html" \
+            -w '%{http_code}' http://127.0.0.1:8788/)
+          [ "$code" = "200" ]
+          grep -qi '<html' "${RUNNER_TEMP}/office-smoke-index.html"
+          echo "GET / -> $code (html ok)"
+  test-orchestrator:
+    needs: changes
+    if: needs.changes.outputs.orchestrator == 'true'
+    permissions:
+      contents: read
+    uses: Icaro0310/devin-powerups/.github/workflows/python-test.yml@v1
+    with:
+      package-dir: packages/orchestrator
+  test-switch:
+    needs: changes
+    if: needs.changes.outputs.switch == 'true'
+    permissions:
+      contents: read
+    uses: Icaro0310/devin-powerups/.github/workflows/python-test.yml@v1
+    with:
+      package-dir: packages/switch
+  ci-gate:
+    if: always()
+    needs: [changes, lint, secrets-scan, adapters-check, config-restricted-check, test-bridge, test-office, test-office-quickstart, test-orchestrator, test-switch]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Aggregate job results
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json, os, sys
+          needs = json.loads(os.environ["NEEDS"])
+          bad = {k: v["result"] for k, v in needs.items()
+                 if v["result"] not in ("success", "skipped")}
+          for k, v in needs.items():
+              print(f"{k}: {v['result']}")
+          if bad:
+              print(f"ci-gate FAIL: {bad}", file=sys.stderr)
+              sys.exit(1)
+          print("ci-gate PASS")
+          PY

@@ -8,11 +8,7 @@ on:
       - '.github/workflows/test-office.yml'
       # routing test executes this workflow's case block
       - '.github/workflows/pypi-publish.yml'
-  pull_request:
-    paths:
-      - 'packages/office/**'
-      - '.github/workflows/test-office.yml'
-      - '.github/workflows/pypi-publish.yml'
+  # pull_request testing now lives in ci.yml (job-level path gating + ci-gate aggregator)
 
 permissions:
   contents: read
