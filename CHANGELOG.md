@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **CI** — `auto-approve` repinned to the shared `pr-approve` gate at
+  v1.14 (was v1.12): the new auto-merge arm (`gh pr merge --auto` once
+  checks pass) requires `contents: write`, now granted at workflow
+  level and on the `approve` job;
+  `packages/bridge/tests/auto-approve-workflow.test.js` pins the caller
+  contract.
 - **CI** — `test-office.yml` gains a `quickstart` job that smoke-tests
   the `packages/office` README quick start end to end on
   `windows-latest` + `ubuntu-latest`: `pip install -e .`, daemon up on
