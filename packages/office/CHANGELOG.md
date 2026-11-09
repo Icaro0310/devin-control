@@ -61,6 +61,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   OOM-immune processes (`oom_score_adj <= -900`) and hides on hosts
   without `/proc`.
 
+- Hub test coverage for the ecosystem proxy (DL-17a7): `test_hub.py`
+  gains an integration case that stands up a real upstream HTTP server
+  serving an eco payload, points `OFFICE_ECO_URL` at it, and asserts
+  `GET /api/eco` returns that payload under the `"eco"` key next to the
+  office state — locking in the chain the `#eco` side panel depends on
+  (office daemon `/api/eco-raw` → rtunnel → `OFFICE_ECO_URL` → hub
+  `/api/eco`). A second case asserts the unreachable-upstream fallback
+  (`{"error": "ecosystem API unreachable"}`).
+
 ### Fixed
 
 - `session_locked()` on Linux never detected open sessions: POSIX locks
