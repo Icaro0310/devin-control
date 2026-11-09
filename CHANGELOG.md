@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **CI** — `pypi-publish.yml` verifier pin updated (Twine 6.1.0 →
+  7.0.0 + packaging pin via reusable verify-wheel-version); publish
+  gate unchanged (Dependabot PR #100).
 - **CI** — `test-office.yml` gains a `quickstart` job that smoke-tests
   the `packages/office` README quick start end to end on
   `windows-latest` + `ubuntu-latest`: `pip install -e .`, daemon up on
