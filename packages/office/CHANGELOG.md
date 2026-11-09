@@ -43,7 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `labeler.yml` is now a thin caller of the shared reusable workflow in `devin-powerups` (`@v1`); PR labeling behavior is unchanged.
 
-- README documents the project as source-only via a generated `DIST-STATUS` banner (no package-registry release; run from a checkout).
+- README: dropped the stale `DIST-STATUS` source-only banner — `devin-office` is published to PyPI (0.1.0) and the registry-drift check requires published entries to carry no `DIST-STATUS` markers.
 
 ### Added
 
