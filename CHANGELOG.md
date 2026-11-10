@@ -3,6 +3,12 @@
 ## Unreleased
 
 - **CI** — `auto-approve` repinned to the shared `pr-approve` gate at
+  v1.16 (was v1.14): the auto-merge arm moved into a dedicated
+  `arm-auto-merge` job inside the reusable so approve runs read-only
+  again; `contents: write` stays on the caller for the arm;
+  `packages/bridge/tests/auto-approve-workflow.test.js` pins the
+  caller contract.
+- **CI** — `auto-approve` repinned to the shared `pr-approve` gate at
   v1.14 (was v1.12): the new auto-merge arm (`gh pr merge --auto` once
   checks pass) requires `contents: write`, now granted at workflow
   level and on the `approve` job;
