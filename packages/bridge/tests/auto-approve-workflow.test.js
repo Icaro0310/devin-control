@@ -35,5 +35,11 @@ test('auto-approve: permissions allow the auto-merge arm', () => {
   assert.match(head, /contents: write/);
   assert.match(approve, /contents: write/);
   assert.match(approve, /pull-requests: write/);
+  // statuses:read is required since v1.15 for the reusable's status
+  // reads (judge gate + arm) — workflow_call caps the called workflow
+  // by the caller's grant, so omitting it dies as a silent
+  // startup_failure. Pin it at both levels so a revert fails here.
+  assert.match(head, /statuses: read/);
+  assert.match(approve, /statuses: read/);
   assert.doesNotMatch(y, /contents: read/);
 });
