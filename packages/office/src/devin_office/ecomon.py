@@ -150,7 +150,7 @@ def _units() -> dict:
         for l in raw.splitlines():
             parts = l.split()
             if len(parts) >= 4 and "devin" in parts[0].lower():
-                units[parts[0]] = "active" if parts[3] == "active" else "inactive"
+                units[parts[0]] = "active" if parts[2] == "active" else "inactive"
     _TASK_CACHE.update(at=now, units=units)
     return units
 

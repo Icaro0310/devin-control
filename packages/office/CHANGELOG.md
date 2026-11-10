@@ -83,6 +83,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   per-OS launch commands moved out of the shared guide — they live in
   `README.linux.md` / `README.windows.md` per the platform-docs rule.
 
+- Eco-board Linux timers no longer all report inactive/down: the
+  `systemctl --user list-units` parser compared `parts[3]` (SUB, always
+  `waiting` for healthy timers) against `active` — it now reads
+  `parts[2]` (ACTIVE), with a parsing regression test.
+
 ## [0.1.0] - 2026-10-03
 
 ### Added
