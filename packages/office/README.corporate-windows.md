@@ -80,7 +80,7 @@ py "<CAMINHO_DO_CHECKOUT>\src\devin_office\daemon.py" --port 8788
 
 ```powershell
 $action  = New-ScheduledTaskAction -Execute "$env:USERPROFILE\devin-tasks\devin-office.cmd"
-$trigger = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"
+$trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
 Register-ScheduledTask -TaskName "devin-office" -Action $action -Trigger $trigger -Force
 ```
 
