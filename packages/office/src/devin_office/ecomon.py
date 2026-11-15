@@ -53,18 +53,27 @@ TOOL_PATTERNS = {
     "ecc-bridge": ("ecc-bridge-server.py", "unified-server.py"),
     "frame-ronin": "frame_ronin",
     "poordjaevin": "poordjaevin",
-    "browser-mcp": "browser-server.py",
     "slack-poll": "slack-poll",
-    "devin-daemon": "devin-daemon",
     # each office component matches its script path, its console script
     # (pip/uv install) and its `python -m devin_office.<mod>` form
-    "office-supervisor": ("up.pyw",),
     "office-probe": ("probe.py", "devin-office-probe", "devin_office.probe"),
-    "office-executor": ("executor.py", "devin-office-executor",
-                        "devin_office.executor"),
     "vm-tunnel": "devin-vm",
     "tailscale": "tailscaled",
 }
+if IS_WIN:
+    # Windows-only liveness. On Linux these roles are covered differently
+    # and checking them reports permanent false-downs: browser-mcp is
+    # served by the VM (already monitored by the vm-browser-mcp probe),
+    # devin-daemon is the retired Slack-bridge resident ACP (slack-poll
+    # dispatches straight to the brain session), up.pyw's watchdog role is
+    # done by systemd units, and the executor is an opt-in manual CLI.
+    TOOL_PATTERNS.update({
+        "browser-mcp": "browser-server.py",
+        "devin-daemon": "devin-daemon",
+        "office-supervisor": ("up.pyw",),
+        "office-executor": ("executor.py", "devin-office-executor",
+                            "devin_office.executor"),
+    })
 
 _PROC_CACHE = {"at": 0.0, "cmdlines": []}
 _PROC_TTL = 8.0
