@@ -88,6 +88,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `waiting` for healthy timers) against `active` — it now reads
   `parts[2]` (ACTIVE), with a parsing regression test.
 
+- Eco-board Linux no longer reports permanent false-downs for roles that
+  only exist on Windows or live elsewhere: `browser-mcp` (served by the
+  VM, already covered by the `vm-browser-mcp` probe), `devin-daemon`
+  (retired Slack-bridge resident ACP — `slack-poll` dispatches to the
+  brain session directly), `office-supervisor` (`up.pyw`'s watchdog role
+  is done by systemd units) and `office-executor` (opt-in manual CLI,
+  not an always-on daemon) are now checked only on Windows.
+
 ## [0.1.0] - 2026-10-03
 
 ### Added
