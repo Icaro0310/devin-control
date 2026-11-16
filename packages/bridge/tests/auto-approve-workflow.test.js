@@ -1,6 +1,6 @@
 // Static assertions for .github/workflows/auto-approve.yml. The
 // caller is thin by design (triggers + pin to the reusable pr-approve
-// gate in devin-powerups), so these tests pin the v1.16 caller
+// gate in devin-powerups), so these tests pin the v1.17 caller
 // contract — the gate version, the pull_request_review_comment
 // trigger that re-evaluates the gate on fix-commit replies, and the
 // permissions the auto-merge arm needs. Text assertions are deliberate — the repo
@@ -14,12 +14,12 @@ import { join } from 'node:path';
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const wf = (name) => readFileSync(join(root, '.github', 'workflows', name), 'utf8');
 
-test('auto-approve: gate pin is exactly v1.16', () => {
+test('auto-approve: gate pin is exactly v1.17', () => {
   const y = wf('auto-approve.yml');
   assert.match(
     y,
-    /uses: Icaro0310\/devin-powerups\/\.github\/workflows\/pr-approve\.yml@v1\.16/,
-    'v1.16 splits the auto-merge arm into a dedicated arm-auto-merge job so approve runs read-only again; a silent downgrade must fail here',
+    /uses: Icaro0310\/devin-powerups\/\.github\/workflows\/pr-approve\.yml@v1\.17/,
+    'v1.17 splits the auto-merge arm into a dedicated arm-auto-merge job so approve runs read-only again; a silent downgrade must fail here',
   );
 });
 
@@ -42,4 +42,14 @@ test('auto-approve: permissions allow the auto-merge arm', () => {
   assert.match(head, /statuses: read/);
   assert.match(approve, /statuses: read/);
   assert.doesNotMatch(y, /contents: read/);
+});
+
+test('bootstrap-approve-109: scoped to PR 109, authorized commenters only', () => {
+  const y = wf('bootstrap-approve-109.yml');
+  assert.match(y, /pull_request_review_comment:\s*\n\s*types: \[created\]/);
+  assert.match(y, /number == 109/);
+  assert.match(y, /state == 'open'/);
+  assert.match(y, /author_association/);
+  assert.match(y, /OWNER/);
+  assert.match(y, /gh pr review 109[\s\S]*--approve/);
 });

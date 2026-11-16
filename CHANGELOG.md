@@ -3,6 +3,12 @@
 ## Unreleased
 
 - **CI** — `auto-approve` repinned to the shared `pr-approve` gate at
+  v1.17 (was v1.16); `bootstrap-approve-109.yml` now requires an
+  authorized commenter (OWNER/MEMBER/COLLABORATOR) so a stray
+  `bootstrap-approve` comment cannot self-approve the PR;
+  `packages/bridge/tests/auto-approve-workflow.test.js` pins both
+  contracts.
+- **CI** — `auto-approve` repinned to the shared `pr-approve` gate at
   v1.16 (was v1.14): the auto-merge arm moved into a dedicated
   `arm-auto-merge` job inside the reusable so approve runs read-only
   again; `contents: write` stays on the caller for the arm. The caller
