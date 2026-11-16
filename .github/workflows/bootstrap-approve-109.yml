@@ -17,6 +17,8 @@ jobs:
     if: >-
       github.event.pull_request.number == 109 &&
       github.event.pull_request.state == 'open' &&
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'),
+        github.event.comment.author_association) &&
       contains(github.event.comment.body, 'bootstrap-approve')
     runs-on: ubuntu-latest
     steps:
