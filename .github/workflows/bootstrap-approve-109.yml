@@ -1,0 +1,28 @@
+name: bootstrap-approve-109
+
+# One-shot self-bootstrap for PR #109 (v1.17 caller bump).
+# pull_request_review_comment runs from PR HEAD — self-sufficient.
+# Scope pinned to PR 109 + 'bootstrap-approve' in comment body.
+
+on:
+  pull_request_review_comment:
+    types: [created]
+
+permissions:
+  pull-requests: write
+  statuses: read
+
+jobs:
+  approve:
+    if: >-
+      github.event.pull_request.number == 109 &&
+      github.event.pull_request.state == 'open' &&
+      contains(github.event.comment.body, 'bootstrap-approve')
+    runs-on: ubuntu-latest
+    steps:
+      - name: approve
+        run: >-
+          gh pr review 109 -R Icaro0310/devin-control --approve
+          --body "bootstrap via head-ref workflow (one-shot, PR #109 only)"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
