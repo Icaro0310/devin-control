@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **CI** — `pypi-publish.yml` verifier pin updated (Twine 6.1.0 →
+  7.0.0 + packaging pin via reusable verify-wheel-version); publish
+  gate unchanged (Dependabot PR #100).
 - **CI** — `auto-approve` repinned to the shared `pr-approve` gate at
   v1.17 (was v1.16); `bootstrap-approve-109.yml` now requires an
   authorized commenter (OWNER/MEMBER/COLLABORATOR) so a stray
