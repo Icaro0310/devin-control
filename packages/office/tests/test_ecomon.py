@@ -45,6 +45,33 @@ class TestToolPatterns(unittest.TestCase):
         self.assertFalse(tools["unified-mcp"])
 
 
+class TestUnitsParsing(unittest.TestCase):
+    """systemctl --user list-units columns: UNIT LOAD ACTIVE SUB DESC.
+
+    ACTIVE is column index 2; SUB (index 3) is 'waiting'/'dead' and must
+    not be compared against 'active' — regression: timers always showed
+    'down' on Linux because parts[3] was checked.
+    """
+
+    def _units(self, raw):
+        ecomon._TASK_CACHE.update(at=0.0, units={})
+        with patch.object(ecomon, "IS_WIN", False), \
+             patch.object(ecomon, "_run", return_value=raw):
+            return ecomon._units()
+
+    @unittest.skipIf(os.name == "nt", "systemctl path is POSIX-only")
+    def test_linux_timer_active_column(self):
+        raw = (
+            "devin-janitor-reap.timer loaded active waiting devin-janitor reap sweep\n"
+            "devin-heartbeat.timer   loaded inactive dead    devin heartbeat\n"
+            "unrelated.timer         loaded active waiting not a devin unit\n"
+        )
+        units = self._units(raw)
+        self.assertEqual(units["devin-janitor-reap.timer"], "active")
+        self.assertEqual(units["devin-heartbeat.timer"], "inactive")
+        self.assertNotIn("unrelated.timer", units)
+
+
 class TestMeta(unittest.TestCase):
     def _meta(self, td):
         with patch.dict(os.environ, {"OFFICE_ECOSYSTEM_DIR": td}):

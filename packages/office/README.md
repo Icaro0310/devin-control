@@ -70,15 +70,6 @@ memory parked in swap, ranked by `VmSwap`. Processes that are OOM-immune
 (`oom_score_adj <= -900`) are marked with a green dot. The panel hides itself
 on hosts without `/proc` (e.g. Windows).
 
-<!-- DIST-STATUS:BEGIN — generated from devin-powerups/registry.json -->
-> **Source-only distribution.** This project is not published to a package
-> registry. Run it from a checkout:
->
-> ```bash
-> git clone https://github.com/Icaro0310/devin-control.git
-> ```
-<!-- DIST-STATUS:END -->
-
 ## Requirements
 
 - Devin Desktop or Devin CLI installed on the machine whose sessions you want

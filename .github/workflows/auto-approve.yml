@@ -27,8 +27,9 @@ on:
   status: {}
 
 permissions:
-  contents: read
+  contents: write
   pull-requests: write
+  statuses: read
 
 jobs:
   approve:
@@ -40,6 +41,11 @@ jobs:
         github.event.context == 'devin-judge/review') &&
        github.event.state == 'success')
     permissions:
-      contents: read
+      contents: write
       pull-requests: write
-    uses: Icaro0310/devin-powerups/.github/workflows/pr-approve.yml@v1.12
+      statuses: read
+    # v1.16: the auto-merge arm lives in a dedicated arm-auto-merge job
+    # inside the reusable — approve itself runs read-only again; the arm
+    # still needs contents:write on this caller job (granted above) or
+    # it warns and waits.
+    uses: Icaro0310/devin-powerups/.github/workflows/pr-approve.yml@v1.17

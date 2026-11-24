@@ -5,6 +5,27 @@
 - **CI** — `pypi-publish.yml` verifier pin updated (Twine 6.1.0 →
   7.0.0 + packaging pin via reusable verify-wheel-version); publish
   gate unchanged (Dependabot PR #100).
+- **CI** — `auto-approve` repinned to the shared `pr-approve` gate at
+  v1.17 (was v1.16); `bootstrap-approve-109.yml` now requires an
+  authorized commenter (OWNER/MEMBER/COLLABORATOR) so a stray
+  `bootstrap-approve` comment cannot self-approve the PR;
+  `packages/bridge/tests/auto-approve-workflow.test.js` pins both
+  contracts.
+- **CI** — `auto-approve` repinned to the shared `pr-approve` gate at
+  v1.16 (was v1.14): the auto-merge arm moved into a dedicated
+  `arm-auto-merge` job inside the reusable so approve runs read-only
+  again; `contents: write` stays on the caller for the arm. The caller
+  also grants `statuses: read` at workflow and job level — required
+  since v1.15 for the reusable's status reads, without which the
+  reusable is rejected as a silent `startup_failure`;
+  `packages/bridge/tests/auto-approve-workflow.test.js` pins the
+  caller contract.
+- **CI** — `auto-approve` repinned to the shared `pr-approve` gate at
+  v1.14 (was v1.12): the new auto-merge arm (`gh pr merge --auto` once
+  checks pass) requires `contents: write`, now granted at workflow
+  level and on the `approve` job;
+  `packages/bridge/tests/auto-approve-workflow.test.js` pins the caller
+  contract.
 - **CI** — `test-office.yml` gains a `quickstart` job that smoke-tests
   the `packages/office` README quick start end to end on
   `windows-latest` + `ubuntu-latest`: `pip install -e .`, daemon up on

@@ -43,7 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `labeler.yml` is now a thin caller of the shared reusable workflow in `devin-powerups` (`@v1`); PR labeling behavior is unchanged.
 
-- README documents the project as source-only via a generated `DIST-STATUS` banner (no package-registry release; run from a checkout).
+- README: dropped the stale `DIST-STATUS` source-only banner — `devin-office` is published to PyPI (0.1.0) and the registry-drift check requires published entries to carry no `DIST-STATUS` markers.
 
 ### Added
 
@@ -61,6 +61,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   OOM-immune processes (`oom_score_adj <= -900`) and hides on hosts
   without `/proc`.
 
+- Hub test coverage for the ecosystem proxy (DL-17a7): `test_hub.py`
+  gains an integration case that stands up a real upstream HTTP server
+  serving an eco payload, points `OFFICE_ECO_URL` at it, and asserts
+  `GET /api/eco` returns that payload under the `"eco"` key next to the
+  office state — locking in the chain the `#eco` side panel depends on
+  (office daemon `/api/eco-raw` → rtunnel → `OFFICE_ECO_URL` → hub
+  `/api/eco`). A second case asserts the unreachable-upstream fallback
+  (`{"error": "ecosystem API unreachable"}`).
+
 ### Fixed
 
 - `session_locked()` on Linux never detected open sessions: POSIX locks
@@ -73,6 +82,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - README quick-start path corrected after the monorepo absorption, and the
   per-OS launch commands moved out of the shared guide — they live in
   `README.linux.md` / `README.windows.md` per the platform-docs rule.
+
+- Eco-board Linux timers no longer all report inactive/down: the
+  `systemctl --user list-units` parser compared `parts[3]` (SUB, always
+  `waiting` for healthy timers) against `active` — it now reads
+  `parts[2]` (ACTIVE), with a parsing regression test.
+
+- Eco-board Linux no longer reports permanent false-downs for roles that
+  only exist on Windows or live elsewhere: `browser-mcp` (served by the
+  VM, already covered by the `vm-browser-mcp` probe), `devin-daemon`
+  (retired Slack-bridge resident ACP — `slack-poll` dispatches to the
+  brain session directly), `office-supervisor` (`up.pyw`'s watchdog role
+  is done by systemd units) and `office-executor` (opt-in manual CLI,
+  not an always-on daemon) are now checked only on Windows.
 
 ## [0.1.0] - 2026-10-03
 
