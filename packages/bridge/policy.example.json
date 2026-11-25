@@ -9,7 +9,8 @@
   },
   "terminal": {
     "allow": ["git status", "git diff*", "git log*", "npm test*", "node --test*"],
-    "deny": ["rm -rf*", "rmdir /s*", "del /f /s*", "format *", "curl*|*sh*", "wget*|*sh*"]
+    "deny": ["rm -rf*", "rmdir /s*", "del /f /s*", "format *", "curl*|*sh*", "wget*|*sh*"],
+    "timeoutMs": 600000
   },
   "fs": {
     "read": {

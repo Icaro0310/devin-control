@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **Bridge** — agent-spawned terminals are now bounded end to end
+  (devin-control#89): every `terminal/create` gets a lifetime cap
+  (`terminal.timeoutMs` in `policy.json` → `BRIDGE_TERMINAL_TIMEOUT_MS`
+  → `DevinAcp` opt, default 10 min) enforced by SIGTERM→SIGKILL
+  escalation, `terminal/wait_for_exit` waits no longer than
+  deadline + kill grace, and `terminal/kill`/`release`/`stop()` reap the
+  whole process tree — POSIX `detached` process-group kill, Windows
+  `taskkill /PID /T /F`. The agent process itself is spawned detached
+  and reaped the same way, and the CLI handles SIGINT/SIGTERM by
+  stopping all live clients (exit 130/143) instead of orphaning `devin
+  acp` and agent commands.
 - **CI** — `pypi-publish.yml` verifier pin updated (Twine 6.1.0 →
   7.0.0 + packaging pin via reusable verify-wheel-version); publish
   gate unchanged (Dependabot PR #100).

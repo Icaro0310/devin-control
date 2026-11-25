@@ -41,6 +41,36 @@ import {
 
 const CAPS = ["terminal", "fsRead", "fsWrite", "network"];
 
+// Live ACP clients so SIGINT/SIGTERM can reap the agent process and
+// every terminal it spawned — without this, Ctrl+C or a kill leaves
+// `devin acp` and agent commands running as orphans.
+const liveClients = new Set();
+let signalReceived = null;
+// Long enough for stop()'s TERM→KILL escalation (killGraceMs, default
+// 2s) to fire for processes that ignore SIGTERM.
+const SIGNAL_DRAIN_MS = 3000;
+
+function onSignal(code) {
+  if (signalReceived !== null) process.exit(code); // second signal: hard exit
+  signalReceived = code;
+  const clients = [...liveClients];
+  liveClients.clear();
+  for (const acp of clients) {
+    try { acp.stop(); } catch { /* already dead */ }
+  }
+  const deadline = Date.now() + SIGNAL_DRAIN_MS;
+  const tick = () => {
+    if (clients.some((c) => c.hasLiveChildren?.()) && Date.now() < deadline) {
+      setTimeout(tick, 50);
+    } else {
+      process.exit(code);
+    }
+  };
+  tick();
+}
+process.on("SIGINT", () => onSignal(130));
+process.on("SIGTERM", () => onSignal(143));
+
 function parseArgs(argv) {
   const opts = { _: [] };
   for (let i = 0; i < argv.length; i++) {
@@ -85,6 +115,8 @@ Agent env: BRIDGE_AGENT_BIN path — explicit executable (any ACP CLI)
          BRIDGE_AGENT_ARGS '["sub","--flags"]' — argv override (JSON array)
          BRIDGE_AGENT_AUTH id|none — authenticate method ("none" skips it)
          BRIDGE_CREDENTIALS_PATH file — credentials.toml override
+         BRIDGE_TERMINAL_TIMEOUT_MS n — per-terminal lifetime cap in ms
+         (default: policy terminal.timeoutMs, else 10min)
 
 Presets: read-only denies terminal/fsWrite/network (observe-only intake);
 full allows everything — HIGH RISK, trusted scratch environments only.`);
@@ -142,6 +174,9 @@ function makeClient(opts, { forPrompt = false, policy = null } = {}) {
     onNotification,
   });
   acp.start();
+  liveClients.add(acp);
+  const stop = acp.stop.bind(acp);
+  acp.stop = () => { liveClients.delete(acp); stop(); };
   return acp;
 }
 
@@ -388,5 +423,7 @@ async function main() {
 main().catch((e) => {
   // Never include credential material in error output.
   console.error(`FATAL: ${e.message}`);
-  process.exit(1);
+  // During signal shutdown the handler owns the exit — exiting here
+  // would cut the TERM→KILL drain short and orphan survivors.
+  if (signalReceived === null) process.exit(1);
 });

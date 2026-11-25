@@ -120,7 +120,7 @@ async function runPrompt(id, params) {
         });
         await request("terminal/wait_for_exit", { sessionId: params.sessionId, terminalId });
         const out = await request("terminal/output", { sessionId: params.sessionId, terminalId });
-        return finish(id, `TERM_OUT:${out.output.trim()}`);
+        return finish(id, `TERM_OUT:${out.output.trim()}|EXIT:${JSON.stringify(out.exitStatus)}`);
       } catch (e) {
         return finish(id, `TERM_ERR:${e.message}`);
       }

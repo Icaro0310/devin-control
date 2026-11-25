@@ -59,6 +59,61 @@ import { Policy } from "./policy.js";
 const require = createRequire(import.meta.url);
 const { resolveSafeExecutable } = require("./safe-executable.cjs");
 
+/** Default lifetime cap for an agent-spawned terminal (10 min). */
+const TERMINAL_TIMEOUT_DEFAULT_MS = 10 * 60 * 1000;
+/** Grace between SIGTERM and SIGKILL when reaping a process tree. */
+const KILL_GRACE_DEFAULT_MS = 2000;
+
+/**
+ * Signal a spawned child's whole process tree. POSIX children are
+ * spawned detached (own process group), so -pid reaches every member —
+ * with shell:true the real command is a grandchild of the spawned shell,
+ * and detached grandchildren can even outlive the shell itself, so the
+ * group is signaled even after the direct child has exited. Windows
+ * console trees have no process groups: taskkill /T walks the tree and
+ * /F forces it (console apps have no graceful close). Returns false when
+ * there is no process group left to signal.
+ */
+function killProcessTree(child, signal = "SIGTERM") {
+  if (!child || child.pid == null) return false;
+  if (process.platform === "win32") {
+    if (child.exitCode !== null || child.signalCode !== null) return false;
+    try {
+      spawn("taskkill", ["/PID", String(child.pid), "/T", "/F"], {
+        windowsHide: true, stdio: "ignore",
+      }).unref();
+    } catch { /* taskkill unavailable — the direct kill below still runs */ }
+    try { child.kill("SIGKILL"); } catch { /* already dead */ }
+    return true;
+  }
+  try {
+    process.kill(-child.pid, signal);
+    return true;
+  } catch (e) {
+    if (e.code === "ESRCH") return false; // group gone — nothing to kill
+    try { child.kill(signal); } catch { /* already dead */ }
+    return true;
+  }
+}
+
+/**
+ * Whether anything in the child's process tree may still be running.
+ * The direct child's exit is not enough: detached grandchildren can
+ * outlive it, so POSIX probes the process group itself.
+ */
+function processGroupAlive(child) {
+  if (!child || child.pid == null) return false;
+  if (process.platform === "win32") {
+    return child.exitCode === null && child.signalCode === null;
+  }
+  try {
+    process.kill(-child.pid, 0);
+    return true;
+  } catch (e) {
+    return e.code === "EPERM"; // exists but not ours
+  }
+}
+
 /** devin strategy: platform default for <data>/devin/credentials.toml. */
 function devinCredentialsPath({ platform, env, home }) {
   if (platform === "win32") {
@@ -276,10 +331,15 @@ export class DevinAcp {
    *                                    invoked when policy returns "ask". No handler → deny.
    * @param {string} opts.token      session token override (default: credentials.toml)
    * @param {number} opts.timeoutMs  per-call timeout
+   * @param {number} opts.terminalTimeoutMs  lifetime cap per agent terminal
+   *                                 (default: BRIDGE_TERMINAL_TIMEOUT_MS →
+   *                                 policy terminal.timeoutMs → 10min)
+   * @param {number} opts.killGraceMs  TERM→KILL escalation delay (default 2000)
    * @param {Function} opts.onNotification  (msg) => void, surfaces every agent notification
    */
   constructor({
     bin, args, cwd, policy, askHandler, token, timeoutMs, onNotification,
+    terminalTimeoutMs, killGraceMs,
   } = {}) {
     this.cwd = cwd || process.cwd();
     const spec = bin
@@ -304,23 +364,51 @@ export class DevinAcp {
     this.askHandler = askHandler || null;
     this._token = token || null;
     this.timeoutMs = Number(timeoutMs || process.env.ACP_TIMEOUT_MS || 300000);
+    const termTimeout = Number(
+      terminalTimeoutMs
+      || process.env.BRIDGE_TERMINAL_TIMEOUT_MS
+      || this.policy.terminalTimeoutMs
+      || TERMINAL_TIMEOUT_DEFAULT_MS,
+    );
+    this.terminalTimeoutMs = Number.isFinite(termTimeout) && termTimeout > 0
+      ? termTimeout : TERMINAL_TIMEOUT_DEFAULT_MS;
+    const grace = Number(killGraceMs || KILL_GRACE_DEFAULT_MS);
+    this.killGraceMs = Number.isFinite(grace) && grace >= 0
+      ? grace : KILL_GRACE_DEFAULT_MS;
     this.onNotification = onNotification || null;
     this._id = 0;
     this._pending = new Map();
     this._buf = "";
     this.notifications = [];
-    // agent-created terminals: id -> {child, chunks, truncated, exitCode, signal, waiters}
+    // agent-created terminals: id -> {child, chunks, truncated, exitCode,
+    // signal, waiters, deadline, killTimer, lifetimeTimer}
     this._terminals = new Map();
+    // every spawned child not yet closed (agent + terminals) — liveness
+    // for the CLI signal path's TERM→KILL drain
+    this._procs = new Set();
+    // children with a pending TERM→KILL escalation — a shell can close
+    // while detached grandchildren still need the KILL to land
+    this._reaping = new Set();
+    this._agentKillTimer = null;
   }
 
   start() {
     this.child = spawn(this.bin, this.binArgv.concat(this.args), {
       cwd: this.cwd,
       stdio: ["pipe", "pipe", "ignore"],
+      // Own process group (POSIX) so stop() can reap the agent's whole
+      // tree, not just the direct child.
+      detached: process.platform !== "win32",
     });
+    this._trackChild(this.child);
     this.child.stdout.setEncoding("utf8");
     this.child.stdout.on("data", (chunk) => this._onData(chunk));
     this.child.on("exit", (code) => {
+      if (this._agentKillTimer) {
+        clearTimeout(this._agentKillTimer);
+        this._agentKillTimer = null;
+        this._reaping.delete(this.child);
+      }
       const err = new Error(`agent process exited (code ${code})`);
       for (const { reject } of this._pending.values()) reject(err);
       this._pending.clear();
@@ -383,6 +471,81 @@ export class DevinAcp {
     }
   }
 
+  /** Track a spawned child for liveness; 'close' is the guaranteed final
+   *  event (fires even when 'exit' doesn't, e.g. spawn failure). */
+  _trackChild(child) {
+    this._procs.add(child);
+    child.on("close", () => this._procs.delete(child));
+  }
+
+  /** True while any spawned child or pending kill escalation remains —
+   *  used by the CLI signal path to wait out the TERM→KILL grace. */
+  hasLiveChildren() {
+    return this._procs.size > 0 || this._reaping.size > 0;
+  }
+
+  _clearTerminalTimers(rec) {
+    if (rec.lifetimeTimer) {
+      clearTimeout(rec.lifetimeTimer);
+      rec.lifetimeTimer = null;
+    }
+    if (rec.killTimer) {
+      clearTimeout(rec.killTimer);
+      rec.killTimer = null;
+      this._reaping.delete(rec.child);
+    }
+  }
+
+  /**
+   * TERM a terminal's whole process tree, escalating to KILL after
+   * killGraceMs if any member is still alive. Group-aware: the spawned
+   * shell may have exited while detached grandchildren live on.
+   */
+  _killTerminal(rec, signal = "SIGTERM") {
+    const child = rec.child;
+    if (!child || child.pid == null) return;
+    if ((rec.exitCode !== null || rec.signal !== null)
+        && !processGroupAlive(child)) return;
+    if (!killProcessTree(child, signal)) return;
+    if (signal === "SIGKILL" || rec.killTimer) return;
+    this._reaping.add(child);
+    rec.killTimer = setTimeout(() => {
+      rec.killTimer = null;
+      this._reaping.delete(child);
+      if (processGroupAlive(child)) {
+        killProcessTree(child, "SIGKILL");
+      }
+    }, this.killGraceMs);
+  }
+
+  /** Lifetime cap reached: nothing in the group may outlive its budget. */
+  _expireTerminal(rec) {
+    rec.lifetimeTimer = null;
+    const child = rec.child;
+    if (!child || child.pid == null) return;
+    if ((rec.exitCode !== null || rec.signal !== null)
+        && !processGroupAlive(child)) return;
+    this._killTerminal(rec);
+  }
+
+  /** Same TERM→KILL treatment for the agent process itself. */
+  _killAgent() {
+    const child = this.child;
+    if (!child || child.pid == null) return;
+    const agentGone = child.exitCode !== null || child.signalCode !== null;
+    if (agentGone && !processGroupAlive(child)) return;
+    if (!killProcessTree(child, "SIGTERM")) return;
+    if (this._agentKillTimer) return;
+    this._reaping.add(child);
+    this._agentKillTimer = setTimeout(() => {
+      this._agentKillTimer = null;
+      this._reaping.delete(child);
+      if (processGroupAlive(child)) {
+        killProcessTree(child, "SIGKILL");
+      }
+    }, this.killGraceMs);
+  }
+
   async _newTerminal(params) {
     const commandLine = [params.command, ...(params.args || [])].join(" ");
     const decision = this.policy.checkTerminal(commandLine);
@@ -394,14 +557,20 @@ export class DevinAcp {
     const rec = {
       chunks: [], truncated: false, exitCode: null, signal: null,
       waiters: [], byteLimit: params.outputByteLimit || 1024 * 1024,
+      deadline: Date.now() + this.terminalTimeoutMs,
+      killTimer: null, lifetimeTimer: null,
     };
     const child = spawn(params.command, params.args || [], {
       cwd: params.cwd || this.cwd,
       env: params.env ? { ...process.env, ...Object.fromEntries(
         (params.env || []).map((e) => [e.name, e.value])) } : process.env,
       shell: true, windowsHide: true,
+      // Own process group (POSIX) so kills reach the whole tree —
+      // shell:true makes the real command a grandchild of the shell.
+      detached: process.platform !== "win32",
     });
     rec.child = child;
+    this._trackChild(child);
     let size = 0;
     const collect = (d) => {
       const s = d.toString();
@@ -413,8 +582,14 @@ export class DevinAcp {
     child.stderr?.on("data", collect);
     child.on("exit", (code, signal) => {
       rec.exitCode = code; rec.signal = signal;
+      // The group may outlive the shell (backgrounded grandchildren):
+      // keep the timers while any member can still be running.
+      if (!processGroupAlive(child)) this._clearTerminalTimers(rec);
       for (const w of rec.waiters.splice(0)) w();
     });
+    rec.lifetimeTimer = setTimeout(
+      () => this._expireTerminal(rec), this.terminalTimeoutMs,
+    );
     this._terminals.set(id, rec);
     return id;
   }
@@ -468,18 +643,35 @@ export class DevinAcp {
           const rec = this._terminals.get(p.terminalId);
           if (!rec) return this._respond(msg.id, null, "unknown terminal");
           if (rec.exitCode === null && rec.signal === null) {
-            await new Promise((r) => rec.waiters.push(r));
+            // Bounded by the terminal's own lifetime: past deadline +
+            // kill grace the tree has been SIGKILLed, so waiting longer
+            // can only hang on an unkillable (D-state) process.
+            const remaining = Math.max(0, rec.deadline - Date.now())
+              + this.killGraceMs + 1000;
+            let timer;
+            await Promise.race([
+              new Promise((r) => rec.waiters.push(r)),
+              new Promise((r) => { timer = setTimeout(r, remaining); }),
+            ]);
+            clearTimeout(timer);
           }
           return this._respond(msg.id, { exitCode: rec.exitCode, signal: rec.signal });
         }
         case "terminal/kill": {
-          this._terminals.get(p.terminalId)?.child?.kill();
+          const rec = this._terminals.get(p.terminalId);
+          if (rec) this._killTerminal(rec);
           return this._respond(msg.id, {});
         }
         case "terminal/release": {
           const rec = this._terminals.get(p.terminalId);
-          if (rec && rec.exitCode === null) rec.child?.kill();
-          this._terminals.delete(p.terminalId);
+          if (rec) {
+            if (rec.lifetimeTimer) {
+              clearTimeout(rec.lifetimeTimer);
+              rec.lifetimeTimer = null;
+            }
+            this._killTerminal(rec);
+            this._terminals.delete(p.terminalId);
+          }
           return this._respond(msg.id, {});
         }
         case "fs/read_text_file":
@@ -679,12 +871,14 @@ export class DevinAcp {
 
   stop() {
     for (const rec of this._terminals.values()) {
-      if (rec.exitCode === null && rec.signal === null) {
-        try { rec.child?.kill(); } catch { /* already dead */ }
+      if (rec.lifetimeTimer) {
+        clearTimeout(rec.lifetimeTimer);
+        rec.lifetimeTimer = null;
       }
+      this._killTerminal(rec);
     }
     this._terminals.clear();
-    try { this.child?.kill(); } catch { /* already dead */ }
+    this._killAgent();
   }
 }
 

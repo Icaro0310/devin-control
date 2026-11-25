@@ -12,7 +12,8 @@
  *   "version": 1,
  *   "defaults": { "terminal": "ask", "fsRead": "ask", "fsWrite": "ask",
  *                 "network": "ask", "permission": "ask" },
- *   "terminal": { "allow": ["git status*"], "deny": ["rm -rf*"] },
+ *   "terminal": { "allow": ["git status*"], "deny": ["rm -rf*"],
+ *                 "timeoutMs": 600000 },
  *   "fs": {
  *     "read":  { "allow": ["**"], "deny": ["**\/.env"] },
  *     "write": { "allow": ["src/**"], "deny": ["**\/.git/**"] }
@@ -172,6 +173,17 @@ export class Policy {
     const fsRead = validateLists("fs.read", doc.fs?.read);
     const fsWrite = validateLists("fs.write", doc.fs?.write);
     const network = validateLists("network", doc.network);
+
+    // Optional per-terminal lifetime bound (ms). validateLists only
+    // inspects allow/deny, so the scalar sibling key passes through.
+    const terminalTimeoutMs = doc.terminal?.timeoutMs;
+    if (terminalTimeoutMs != null
+        && (!Number.isFinite(terminalTimeoutMs) || terminalTimeoutMs <= 0)) {
+      throw new Error(
+        "policy.terminal.timeoutMs must be a positive number of milliseconds",
+      );
+    }
+    this.terminalTimeoutMs = terminalTimeoutMs ?? null;
 
     this._rules = {
       terminal: {
@@ -380,6 +392,8 @@ export function examplePolicyDoc() {
     terminal: {
       allow: ["git status", "git diff*", "git log*", "npm test*", "node --test*"],
       deny: ["rm -rf*", "rmdir /s*", "del /f /s*", "format *", "curl*|*sh*", "wget*|*sh*"],
+      // Lifetime cap for every agent-spawned terminal (default 10min).
+      timeoutMs: 600000,
     },
     fs: {
       read: {
