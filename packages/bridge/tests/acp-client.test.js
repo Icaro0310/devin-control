@@ -1,5 +1,6 @@
 import { describe, it, after } from "node:test";
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -11,14 +12,19 @@ import { Policy } from "../src/policy.js";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE = path.join(HERE, "fixtures", "fake-acp.mjs");
 const FIXTURES = path.join(HERE, "fixtures");
+const BIN = path.join(HERE, "..", "bin", "devin-bridge.js");
 
 const clients = [];
-async function makeClient({ policy, askHandler, timeoutMs = 15000 } = {}) {
+async function makeClient({
+  policy, askHandler, timeoutMs = 15000, terminalTimeoutMs, killGraceMs,
+} = {}) {
   const acp = new DevinAcp({
     bin: process.execPath,
     args: [FIXTURE],
     cwd: FIXTURES,
     timeoutMs,
+    terminalTimeoutMs,
+    killGraceMs,
     token: "test-token",
     policy: policy || Policy.default({ root: FIXTURES }),
     askHandler,
@@ -284,6 +290,147 @@ describe("DevinAcp — agent auth (BRIDGE_AGENT_AUTH)", () => {
       const res = await acp.prompt("AUTH_STATE");
       assert.equal(res.text, "AUTH:acme-auth");
     }));
+});
+
+describe("DevinAcp — terminal lifetime and cleanup", () => {
+  const allowAll = () => new Policy(
+    { version: 1, terminal: { allow: ["*"] } }, { root: FIXTURES });
+  const sleepCmd = () => (process.platform === "win32"
+    ? "ping -n 30 127.0.0.1" : "sleep 30");
+  const tick = (ms = 50) => new Promise((r) => setTimeout(r, ms));
+  const pidAlive = (pid) => {
+    try { process.kill(pid, 0); return true; }
+    catch (e) { return e.code === "EPERM"; }
+  };
+
+  it("kills a terminal that outlives terminalTimeoutMs", async () => {
+    const acp = await makeClient({
+      policy: allowAll(), terminalTimeoutMs: 300, killGraceMs: 200,
+    });
+    await acp.newSession();
+    const t0 = Date.now();
+    const res = await acp.prompt(`RUN_TERM ${sleepCmd()}`);
+    const elapsed = Date.now() - t0;
+    assert.equal(res.timedOut, false);
+    assert.ok(elapsed < 15000, `terminal was not bounded (${elapsed}ms)`);
+    assert.match(res.text, /TERM_OUT:/);
+    assert.match(res.text, /EXIT:\{/); // wait_for_exit returned a real status
+    assert.match(res.text, /WAIT:\{"exitCode":/); // wait result surfaced
+    if (process.platform !== "win32") {
+      assert.match(res.text, /"signal":"SIG(TERM|KILL)"/);
+    }
+  });
+
+  it("an unparseable BRIDGE_TERMINAL_TIMEOUT_MS falls through to policy", async () => {
+    const prev = process.env.BRIDGE_TERMINAL_TIMEOUT_MS;
+    process.env.BRIDGE_TERMINAL_TIMEOUT_MS = "30s"; // not a number
+    try {
+      const acp = await makeClient({
+        policy: new Policy(
+          { version: 1, terminal: { allow: ["*"], timeoutMs: 300 } },
+          { root: FIXTURES },
+        ),
+      });
+      // The invalid env value must not shadow the stricter policy
+      // with the 10-minute default.
+      assert.equal(acp.terminalTimeoutMs, 300);
+    } finally {
+      if (prev === undefined) delete process.env.BRIDGE_TERMINAL_TIMEOUT_MS;
+      else process.env.BRIDGE_TERMINAL_TIMEOUT_MS = prev;
+    }
+  });
+
+  it("policy terminal.timeoutMs bounds the terminal when no opt is given", async () => {
+    const acp = await makeClient({
+      policy: new Policy(
+        { version: 1, terminal: { allow: ["*"], timeoutMs: 300 } },
+        { root: FIXTURES },
+      ),
+      killGraceMs: 200,
+    });
+    await acp.newSession();
+    const res = await acp.prompt(`RUN_TERM ${sleepCmd()}`);
+    assert.equal(res.timedOut, false);
+    assert.match(res.text, /EXIT:\{/);
+  });
+
+  it("escalates to SIGKILL when the terminal ignores SIGTERM", async (t) => {
+    if (process.platform === "win32") {
+      return t.skip("POSIX signal semantics");
+    }
+    const acp = await makeClient({
+      policy: allowAll(), terminalTimeoutMs: 300, killGraceMs: 200,
+    });
+    const fixture = path.join(FIXTURES, "term-ignore.mjs");
+    const id = await acp._newTerminal({ command: process.execPath, args: [fixture] });
+    const rec = acp._terminals.get(id);
+    // term-ignore.mjs survives SIGTERM by design — the process group can
+    // only empty out via the KILL escalation.
+    const groupAlive = () => {
+      try { process.kill(-rec.child.pid, 0); return true; }
+      catch (e) { return e.code === "EPERM"; }
+    };
+    const deadline = Date.now() + 8000;
+    while (groupAlive() && Date.now() < deadline) await tick();
+    assert.equal(groupAlive(), false, "SIGTERM-ignoring terminal was not KILLed");
+  });
+
+  it("stop() reaps live terminals and their whole process tree", async () => {
+    const acp = await makeClient({
+      policy: allowAll(), terminalTimeoutMs: 60000, killGraceMs: 200,
+    });
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acp-gc-"));
+    const pidFile = path.join(tmp, "gpid.txt");
+    const fixture = path.join(FIXTURES, "term-grandchild.mjs");
+    const id = await acp._newTerminal({
+      command: process.execPath, args: [fixture, pidFile],
+    });
+    const fileDeadline = Date.now() + 8000;
+    while (!fs.existsSync(pidFile) && Date.now() < fileDeadline) await tick();
+    assert.ok(fs.existsSync(pidFile), "grandchild pid file never appeared");
+    const gpid = Number(fs.readFileSync(pidFile, "utf8"));
+    assert.ok(pidAlive(gpid));
+    const rec = acp._terminals.get(id);
+    acp.stop();
+    const deadline = Date.now() + 8000;
+    while (acp.hasLiveChildren() && Date.now() < deadline) await tick();
+    assert.equal(acp.hasLiveChildren(), false);
+    assert.ok(rec.exitCode !== null || rec.signal !== null);
+    // the grandchild must be dead too — this is the orphan regression
+    const gdeadline = Date.now() + 5000;
+    while (pidAlive(gpid) && Date.now() < gdeadline) await tick();
+    assert.equal(pidAlive(gpid), false, `grandchild ${gpid} survived stop()`);
+  });
+});
+
+describe("devin-bridge CLI — signal handling", () => {
+  it("SIGTERM reaps the agent and exits 143 instead of orphaning it", async (t) => {
+    if (process.platform === "win32") {
+      return t.skip("POSIX signals only — Windows kills via TerminateProcess");
+    }
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "db-sig-"));
+    const env = {
+      ...process.env,
+      BRIDGE_AGENT_BIN: process.execPath,
+      BRIDGE_AGENT_ARGS: JSON.stringify([FIXTURE]),
+      BRIDGE_AGENT_AUTH: "none",
+    };
+    const child = spawn(process.execPath, [
+      BIN, "prompt", cwd, "HANG", "--timeout-ms", "120000",
+    ], { cwd, env, stdio: ["ignore", "pipe", "pipe"] });
+    child.stderr.resume(); // drain the live stream
+    child.stdout.resume();
+    // give init + session/new + session/prompt time to get in-flight
+    await new Promise((r) => setTimeout(r, 2500));
+    const t0 = Date.now();
+    child.kill("SIGTERM");
+    const { code } = await new Promise((resolve) => {
+      child.on("exit", (c) => resolve({ code: c }));
+    });
+    const elapsed = Date.now() - t0;
+    assert.equal(code, 143); // handler ran — default SIGTERM death has code null
+    assert.ok(elapsed < 10000, `shutdown took ${elapsed}ms`);
+  });
 });
 
 describe("maxCostField", () => {

@@ -113,7 +113,8 @@ orchestrator script / human
   },
   "terminal": {
     "allow": ["git status", "npm test*"],   // whole command line, * = any text
-    "deny":  ["rm -rf*", "format *"]
+    "deny":  ["rm -rf*", "format *"],
+    "timeoutMs": 600000                    // optional lifetime cap per terminal
   },
   "fs": {
     "read":  { "allow": ["**"], "deny": ["**/.env", "**/credentials*"] },
@@ -143,6 +144,13 @@ Rules:
   appended to `fs.read.deny` unconditionally — an `allow: ["**"]` policy
   still cannot read the credential store the bridge itself authenticates
   with.
+- **`terminal.timeoutMs`** (optional, positive ms) caps the lifetime of
+  every agent-spawned terminal; at expiry the whole process tree is
+  SIGTERMed then SIGKILLed after a short grace. Precedence:
+  `DevinAcp` `terminalTimeoutMs` opt → `BRIDGE_TERMINAL_TIMEOUT_MS` →
+  this field → 10 min default. `terminal/wait_for_exit` is bounded by the
+  same deadline, and `terminal/kill`/`release`/`stop()` reap the tree
+  (POSIX process-group kill, Windows `taskkill /T /F`).
 
 `session/request_permission` classification (params.toolCall):
 

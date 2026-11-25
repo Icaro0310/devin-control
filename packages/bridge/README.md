@@ -103,6 +103,7 @@ Everything per-agent lives in a strategy registry (`AGENT_STRATEGIES` in
 | `BRIDGE_AGENT_AUTH` | `authenticate` methodId override; `none` skips the call (default: the strategy's, `devin-browser` for devin) |
 | `BRIDGE_CREDENTIALS_PATH` | credentials.toml override for any strategy |
 | `BRIDGE_AGENT_TOKEN_KEY` | credentials.toml key holding the session token (default: the strategy's `tokenKey`, `windsurf_api_key` for devin) |
+| `BRIDGE_TERMINAL_TIMEOUT_MS` | lifetime cap in ms for every terminal the agent spawns (default: `terminal.timeoutMs` in `policy.json`, else 10 min); expired trees are SIGTERM→SIGKILL reaped |
 
 Resolution order — executable: `BRIDGE_AGENT_BIN` → the selected
 strategy's candidates (`BRIDGE_AGENT`, default `devin`:
