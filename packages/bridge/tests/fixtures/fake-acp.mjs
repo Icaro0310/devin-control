@@ -118,9 +118,9 @@ async function runPrompt(id, params) {
           args: cmd.split(" ").slice(1),
           outputByteLimit: 65536,
         });
-        await request("terminal/wait_for_exit", { sessionId: params.sessionId, terminalId });
+        const wait = await request("terminal/wait_for_exit", { sessionId: params.sessionId, terminalId });
         const out = await request("terminal/output", { sessionId: params.sessionId, terminalId });
-        return finish(id, `TERM_OUT:${out.output.trim()}|EXIT:${JSON.stringify(out.exitStatus)}`);
+        return finish(id, `TERM_OUT:${out.output.trim()}|EXIT:${JSON.stringify(out.exitStatus)}|WAIT:${JSON.stringify(wait)}`);
       } catch (e) {
         return finish(id, `TERM_ERR:${e.message}`);
       }

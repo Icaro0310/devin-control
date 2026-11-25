@@ -143,6 +143,13 @@ function loadPolicy(opts) {
 /** Interactive askHandler: explicit y/yes approves, anything else denies. */
 function interactiveAsker() {
   const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
+  // With an active readline, the first Ctrl+C is delivered to the
+  // interface, not the process — forward it so the shutdown path
+  // (agent TERM→KILL drain) still runs.
+  rl.on("SIGINT", () => {
+    rl.close();
+    process.kill(process.pid, "SIGINT");
+  });
   process.on("exit", () => rl.close());
   return (req) => new Promise((resolve) => {
     const desc = req.command ?? req.path ?? req.reason ?? req.capability;

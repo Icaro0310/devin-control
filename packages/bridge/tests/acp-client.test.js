@@ -315,8 +315,28 @@ describe("DevinAcp — terminal lifetime and cleanup", () => {
     assert.ok(elapsed < 15000, `terminal was not bounded (${elapsed}ms)`);
     assert.match(res.text, /TERM_OUT:/);
     assert.match(res.text, /EXIT:\{/); // wait_for_exit returned a real status
+    assert.match(res.text, /WAIT:\{"exitCode":/); // wait result surfaced
     if (process.platform !== "win32") {
       assert.match(res.text, /"signal":"SIG(TERM|KILL)"/);
+    }
+  });
+
+  it("an unparseable BRIDGE_TERMINAL_TIMEOUT_MS falls through to policy", async () => {
+    const prev = process.env.BRIDGE_TERMINAL_TIMEOUT_MS;
+    process.env.BRIDGE_TERMINAL_TIMEOUT_MS = "30s"; // not a number
+    try {
+      const acp = await makeClient({
+        policy: new Policy(
+          { version: 1, terminal: { allow: ["*"], timeoutMs: 300 } },
+          { root: FIXTURES },
+        ),
+      });
+      // The invalid env value must not shadow the stricter policy
+      // with the 10-minute default.
+      assert.equal(acp.terminalTimeoutMs, 300);
+    } finally {
+      if (prev === undefined) delete process.env.BRIDGE_TERMINAL_TIMEOUT_MS;
+      else process.env.BRIDGE_TERMINAL_TIMEOUT_MS = prev;
     }
   });
 

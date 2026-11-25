@@ -65,6 +65,15 @@ const TERMINAL_TIMEOUT_DEFAULT_MS = 10 * 60 * 1000;
 const KILL_GRACE_DEFAULT_MS = 2000;
 
 /**
+ * Absolute path to the system taskkill — never resolved through PATH,
+ * so a binary planted in an untrusted repo cannot shadow it.
+ */
+function taskkillPath() {
+  const root = process.env.SystemRoot || process.env.windir || "C:\\Windows";
+  return `${root}\\System32\\taskkill.exe`;
+}
+
+/**
  * Signal a spawned child's whole process tree. POSIX children are
  * spawned detached (own process group), so -pid reaches every member —
  * with shell:true the real command is a grandchild of the spawned shell,
@@ -79,11 +88,24 @@ function killProcessTree(child, signal = "SIGTERM") {
   if (process.platform === "win32") {
     if (child.exitCode !== null || child.signalCode !== null) return false;
     try {
-      spawn("taskkill", ["/PID", String(child.pid), "/T", "/F"], {
-        windowsHide: true, stdio: "ignore",
-      }).unref();
-    } catch { /* taskkill unavailable — the direct kill below still runs */ }
-    try { child.kill("SIGKILL"); } catch { /* already dead */ }
+      // Absolute path: a bare "taskkill" resolves through PATH, where a
+      // binary planted in an untrusted workspace could shadow the
+      // system utility. taskkill /T kills the whole tree including the
+      // root — a direct child.kill() here could reap the parent before
+      // the tree is even enumerated, orphaning its children.
+      const tk = spawn(taskkillPath(),
+        ["/PID", String(child.pid), "/T", "/F"], {
+          windowsHide: true, stdio: "ignore",
+        });
+      tk.on("error", () => {
+        try { child.kill("SIGKILL"); } catch { /* already dead */ }
+      });
+      tk.unref();
+    } catch {
+      // taskkill couldn't be spawned at all — direct kill is the
+      // only option left.
+      try { child.kill("SIGKILL"); } catch { /* already dead */ }
+    }
     return true;
   }
   try {
@@ -364,14 +386,18 @@ export class DevinAcp {
     this.askHandler = askHandler || null;
     this._token = token || null;
     this.timeoutMs = Number(timeoutMs || process.env.ACP_TIMEOUT_MS || 300000);
-    const termTimeout = Number(
-      terminalTimeoutMs
-      || process.env.BRIDGE_TERMINAL_TIMEOUT_MS
-      || this.policy.terminalTimeoutMs
-      || TERMINAL_TIMEOUT_DEFAULT_MS,
-    );
-    this.terminalTimeoutMs = Number.isFinite(termTimeout) && termTimeout > 0
-      ? termTimeout : TERMINAL_TIMEOUT_DEFAULT_MS;
+    // First *valid* positive value wins — an unparseable override
+    // (e.g. BRIDGE_TERMINAL_TIMEOUT_MS="30s") must fall through to the
+    // next source, not silently replace a stricter policy with the
+    // default.
+    const termTimeout = [
+      terminalTimeoutMs,
+      process.env.BRIDGE_TERMINAL_TIMEOUT_MS,
+      this.policy.terminalTimeoutMs,
+    ]
+      .map((v) => (v === undefined || v === null ? NaN : Number(v)))
+      .find((v) => Number.isFinite(v) && v > 0);
+    this.terminalTimeoutMs = termTimeout ?? TERMINAL_TIMEOUT_DEFAULT_MS;
     const grace = Number(killGraceMs || KILL_GRACE_DEFAULT_MS);
     this.killGraceMs = Number.isFinite(grace) && grace >= 0
       ? grace : KILL_GRACE_DEFAULT_MS;
@@ -404,7 +430,10 @@ export class DevinAcp {
     this.child.stdout.setEncoding("utf8");
     this.child.stdout.on("data", (chunk) => this._onData(chunk));
     this.child.on("exit", (code) => {
-      if (this._agentKillTimer) {
+      // A detached grandchild can ignore SIGTERM and outlive the
+      // agent — keep the pending escalation while the group is still
+      // alive, the same guard terminal teardown uses.
+      if (this._agentKillTimer && !processGroupAlive(this.child)) {
         clearTimeout(this._agentKillTimer);
         this._agentKillTimer = null;
         this._reaping.delete(this.child);
